@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Thursday Madness • Extraction de Partitions Guitar Pro</title>
+    <title>Get My Partitions</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -547,9 +547,9 @@
                     <circle cx="6" cy="18" r="3"></circle>
                     <circle cx="18" cy="16" r="3"></circle>
                 </svg>
-                Thursday Madness • Band Suite
+                Get My Partitions Band Suite
             </div>
-            <h1>Extracteur de Partitions Guitar Pro</h1>
+            <h1>Partitions Guitar Pro</h1>
             <p class="subtitle">Recherche instantanée et téléchargement des partitions (.gp5) pour le groupe</p>
         </header>
 
@@ -830,7 +830,7 @@
                                 <polyline points="7 10 12 15 17 10"></polyline>
                                 <line x1="12" y1="15" x2="12" y2="3"></line>
                             </svg>
-                            Télécharger (.gp5)
+                            Télécharger (Guitar Pro )
                         </button>
                     </div>
                 `;
@@ -904,7 +904,7 @@
                 localFilesBody.innerHTML = files.map(file => `
                     <tr>
                         <td class="file-name-cell">
-                            <span class="file-badge">GP5</span>
+                            <span class="file-badge">${file.name.toLowerCase().endsWith('.gp5') ? 'GP5' : (file.name.toLowerCase().endsWith('.gp') ? 'GP' : 'TAB')}</span>
                             ${file.name}
                         </td>
                         <td>${formatBytes(file.size)}</td>

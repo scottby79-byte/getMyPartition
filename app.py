@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
-Application Web & API REST pour l'extraction de partitions Guitar Pro (.gp / .gp5).
+Application Web & API REST pour l'extraction de partitions Guitar Pro (.gp / .gp5 / .gp4 / .gp3 / .gpx).
 Compatible WSGI (Gunicorn en production, Flask dev server en local).
 """
 
 import os
 import sys
+import urllib.parse
 from pathlib import Path
 from flask import Flask, request, jsonify, send_file, send_from_directory
 
@@ -58,7 +59,31 @@ def api_song():
         return jsonify({"success": True, "details": details})
     except Exception as e:
         return jsonify({"success": False, "error": f"Erreur de récupération : {str(e)}"}), 500
+ 
+ 
+@app.route("/api/check", methods=["GET"])
+def api_check():
+    """Vérifie si une partition Guitar Pro est disponible pour un morceau via HEAD et historique."""
+    song_id = request.args.get("id", "").strip()
+    if not song_id or not song_id.isdigit():
+        return jsonify({"success": False, "error": "ID de morceau invalide"}), 400
 
+    try:
+        details = get_song_gp_source(int(song_id))
+        return jsonify({
+            "success": True,
+            "available": True,
+            "song_id": int(song_id),
+            "revision_id": details.get("revision_id"),
+            "source_url": details.get("source_url")
+        })
+    except Exception as e:
+        return jsonify({
+            "success": True,
+            "available": False,
+            "song_id": int(song_id),
+            "error": str(e)
+        })
 
 @app.route("/api/download", methods=["GET", "POST"])
 def api_download():
@@ -74,7 +99,15 @@ def api_download():
 
     try:
         details = get_song_gp_source(int(song_id))
-        ext = ".gp5" if ".gp5" in details["source_url"] else ".gp"
+        url_path = urllib.parse.urlparse(details["source_url"]).path
+        ext = Path(url_path).suffix.lower()
+        if not ext:
+            for candidate_ext in [".gp5", ".gp4", ".gp3", ".gpx", ".gp"]:
+                if candidate_ext in details["source_url"].lower():
+                    ext = candidate_ext
+                    break
+            else:
+                ext = ".gp"
         filename = f"{clean_filename(details['artist'])}_{clean_filename(details['title'])}{ext}"
         target_path = PARTITIONS_DIR / filename
 
@@ -105,7 +138,7 @@ def api_local_files():
     try:
         files = []
         for f in PARTITIONS_DIR.glob("*.*"):
-            if f.suffix.lower() in [".gp", ".gp5", ".gpx", ".mid", ".midi"]:
+            if f.suffix.lower() in [".gp", ".gp5", ".gp4", ".gp3", ".gpx", ".mid", ".midi"]:
                 files.append({
                     "name": f.name,
                     "size": f.stat().st_size,
