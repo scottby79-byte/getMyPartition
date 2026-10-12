@@ -1,4 +1,4 @@
-# 🎸 Thursday Madness • Extracteur de Partitions Guitar Pro (.gp5)
+# 🎸 Extracteur de Partitions Guitar Pro (.gp5)
 
 Application autonome (front-end web + back-end API Python) permettant de rechercher et télécharger directement des partitions multi-instruments au format **Guitar Pro (.gp5 / .gp)** pour le groupe de musique.
 
