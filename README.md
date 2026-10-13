@@ -109,3 +109,12 @@ ThursdayMadness/partitions/
 ├── README.md               # Cette documentation
 └── IZIA_Let_Me_Alone.gp5   # Fichier Guitar Pro extrait (43 Ko)
 ```
+
+---
+## initialisation de l'environnement virtuel python : 
+```
+python3 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install -r requirements.txt
+```
