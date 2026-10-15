@@ -2,26 +2,130 @@
 """
 Application Web & API REST pour l'extraction de partitions Guitar Pro (.gp / .gp5 / .gp4 / .gp3 / .gpx).
 Compatible WSGI (Gunicorn en production, Flask dev server en local).
+
+Architecture multi-sources :
+  Les sources de partitions sont des modules indépendants qui exposent tous la même interface :
+    - search_songs(query: str) -> list[dict]
+    - get_song_gp_source(song_id) -> dict
+    - download_gp_file(source_url, output_path) -> Path
+    - SOURCE_ID   : str  (identifiant technique unique)
+    - SOURCE_LABEL: str  (libellé affiché dans l'interface)
+
+  Pour ajouter une nouvelle source :
+    1. Créer un module respectant l'interface ci-dessus.
+    2. L'ajouter dans la liste SOURCES (dans l'ordre d'affichage souhaité).
 """
 
 import os
 import sys
+import time
+import threading
 import urllib.parse
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 from flask import Flask, request, jsonify, send_file, send_from_directory
+from pymongo import MongoClient
+from supabase import create_client
+from dotenv import load_dotenv
 
-from extract_partition import (
-    search_songs,
-    get_song_gp_source,
-    download_gp_file,
-    clean_filename
-)
+import songsterr
+import myguitarpro
 
+load_dotenv()
+
+# ---------------------------------------------------------------------------
+# Répertoires
+# ---------------------------------------------------------------------------
 BASE_DIR = Path(__file__).resolve().parent
-PARTITIONS_DIR = BASE_DIR
+PARTITIONS_DIR = BASE_DIR / "download"
+PARTITIONS_DIR.mkdir(exist_ok=True)
 
 app = Flask(__name__, static_folder=str(BASE_DIR), static_url_path="")
 
+# ---------------------------------------------------------------------------
+# Initialisation des services cloud
+# ---------------------------------------------------------------------------
+
+# Initialisation sécurisée sans test booléen direct
+KEEP_ALIVE_CHECK = os.getenv("KEEP_ALIVE_CHECK")
+SUPABASE_URL  = os.getenv("SUPABASE_URL")
+SUPABASE_KEY  = os.getenv("SUPABASE_KEY")
+BUCKET_NAME   = os.getenv("SUPABASE_BUCKET")
+MONGO_URI     = os.getenv("MONGO_URI")
+MONGO_DBNAME  = os.getenv("MONGO_DBNAME", "GetMyPartition")
+MONGO_COLLECTION = os.getenv("MONGO_COLLECTION_GPTAB_NAME", "GuitarProTab")
+
+try:
+    supabase_client = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL else None
+    
+    if MONGO_URI:
+        mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
+        mongo_db = mongo_client[MONGO_DBNAME]
+        mongo_collection = mongo_db[MONGO_COLLECTION]
+    else:
+        mongo_client = None
+        mongo_db = None
+        mongo_collection = None
+except Exception as e:
+    print(f"❌ Erreur lors de l'initialisation des clients cloud : {e}")
+    supabase_client  = None
+    mongo_client     = None
+    mongo_db         = None
+    mongo_collection = None
+
+# Injection des dépendances dans la source mygppro
+myguitarpro.init(
+    mongo_collection=mongo_collection,
+    supabase_client=supabase_client,
+    bucket_name=BUCKET_NAME,
+)
+
+# ---------------------------------------------------------------------------
+# Registre des sources — ordre = ordre d'affichage dans l'interface
+# Pour ajouter une source, l'insérer ici à la position souhaitée.
+# ---------------------------------------------------------------------------
+SOURCES: list = [
+    songsterr,  # 1. Songsterr (source externe)
+    myguitarpro,    # 2. Bibliothèque personnelle (MongoDB + Supabase)
+    # gprotab,  # 3. GProTab — à décommenter quand le module sera prêt
+]
+
+
+# ---------------------------------------------------------------------------
+# Keep-alive : ping MongoDB & Supabase toutes les 10 minutes
+# ---------------------------------------------------------------------------
+def background_keep_alive():
+    """
+    Tâche de fond qui ping MongoDB et Supabase toutes les 10 minutes
+    avec un mécanisme de timeout pour éviter tout blocage.
+    """
+    while True:
+        time.sleep(KEEP_ALIVE_CHECK)
+        print("🔄 [Keep-Alive] Ping interne vers MongoDB et Supabase...")
+
+        if mongo_db is not None:
+            try:
+                mongo_db.command("ping")
+                print("   -> MongoDB Atlas : OK")
+            except Exception as e:
+                print(f"   -> MongoDB Atlas Erreur (Timeout/Connexion) : {e}")
+
+        if supabase_client is not None and BUCKET_NAME:
+            try:
+                res = supabase_client.storage.from_(BUCKET_NAME).list(options={"limit": 1})
+                print(f"   -> Supabase Storage : OK (éléments: {len(res) if isinstance(res, list) else 'OK'})")
+            except Exception as e:
+                print(f"   -> Supabase Storage Erreur (Exception levée) : {e}")
+
+
+keep_alive_thread = threading.Thread(target=background_keep_alive, daemon=True)
+keep_alive_thread.start()
+
+
+# ---------------------------------------------------------------------------
+# Routes
+# ---------------------------------------------------------------------------
 
 @app.route("/")
 def index():
@@ -31,102 +135,168 @@ def index():
 
 @app.route("/api/search", methods=["GET"])
 def api_search():
-    """Recherche des morceaux via Songsterr API."""
-    query = request.args.get("q", "").strip()
+    """
+    Recherche des morceaux sur toutes les sources actives en parallèle.
+    Les résultats sont regroupés par source, dans l'ordre du registre SOURCES.
+    Chaque groupe porte un label et un identifiant de source.
+    """
+    query  = request.args.get("q", "").strip()
     artist = request.args.get("artist", "").strip()
-    title = request.args.get("title", "").strip()
+    title  = request.args.get("title", "").strip()
 
     search_term = query or f"{artist} {title}".strip()
     if not search_term:
         return jsonify({"success": False, "error": "Veuillez fournir un nom d'artiste ou un titre"}), 400
 
-    try:
-        results = search_songs(search_term)
-        return jsonify({"success": True, "results": results, "query": search_term})
-    except Exception as e:
-        return jsonify({"success": False, "error": f"Erreur de recherche : {str(e)}"}), 500
+    # Interrogation parallèle de toutes les sources
+    results_by_source: dict[str, list] = {}
+    errors_by_source:  dict[str, str]  = {}
+
+    def _search_source(source):
+        try:
+            hits = source.search_songs(search_term)
+            # Garantit que chaque résultat porte l'identifiant de sa source
+            for hit in hits:
+                hit.setdefault("source", source.SOURCE_ID)
+            return source.SOURCE_ID, hits, None
+        except Exception as e:
+            return source.SOURCE_ID, [], str(e)
+
+    with ThreadPoolExecutor(max_workers=len(SOURCES)) as pool:
+        futures = {pool.submit(_search_source, src): src for src in SOURCES}
+        for future in as_completed(futures):
+            source_id, hits, error = future.result()
+            results_by_source[source_id] = hits
+            if error:
+                errors_by_source[source_id] = error
+
+    # Reconstruction dans l'ordre du registre
+    ordered_groups = [
+        {
+            "source_id":    src.SOURCE_ID,
+            "source_label": src.SOURCE_LABEL,
+            "results":      results_by_source.get(src.SOURCE_ID, []),
+            "error":        errors_by_source.get(src.SOURCE_ID),
+        }
+        for src in SOURCES
+    ]
+
+    return jsonify({
+        "success": True,
+        "query":   search_term,
+        "groups":  ordered_groups,
+    })
 
 
 @app.route("/api/song", methods=["GET"])
 def api_song():
-    """Récupère les détails et pistes d'un morceau."""
-    song_id = request.args.get("id", "").strip()
-    if not song_id or not song_id.isdigit():
-        return jsonify({"success": False, "error": "ID de morceau invalide"}), 400
+    """Récupère les détails d'un morceau depuis la source indiquée."""
+    song_id   = request.args.get("id", "").strip()
+    source_id = request.args.get("source", songsterr.SOURCE_ID).strip()
+
+    if not song_id:
+        return jsonify({"success": False, "error": "ID de morceau manquant"}), 400
+
+    source = _get_source(source_id)
+    if source is None:
+        return jsonify({"success": False, "error": f"Source inconnue : {source_id!r}"}), 400
+
+    # Songsterr attend un entier
+    parsed_id = _parse_id(song_id, source_id)
 
     try:
-        details = get_song_gp_source(int(song_id))
+        details = source.get_song_gp_source(parsed_id)
         return jsonify({"success": True, "details": details})
     except Exception as e:
         return jsonify({"success": False, "error": f"Erreur de récupération : {str(e)}"}), 500
- 
- 
+
+
 @app.route("/api/check", methods=["GET"])
 def api_check():
-    """Vérifie si une partition Guitar Pro est disponible pour un morceau via HEAD et historique."""
-    song_id = request.args.get("id", "").strip()
-    if not song_id or not song_id.isdigit():
-        return jsonify({"success": False, "error": "ID de morceau invalide"}), 400
+    """Vérifie si une partition Guitar Pro est disponible pour un morceau."""
+    song_id   = request.args.get("id", "").strip()
+    source_id = request.args.get("source", songsterr.SOURCE_ID).strip()
+
+    if not song_id:
+        return jsonify({"success": False, "error": "ID de morceau manquant"}), 400
+
+    source    = _get_source(source_id)
+    parsed_id = _parse_id(song_id, source_id)
 
     try:
-        details = get_song_gp_source(int(song_id))
+        details = source.get_song_gp_source(parsed_id)
         return jsonify({
-            "success": True,
-            "available": True,
-            "song_id": int(song_id),
-            "revision_id": details.get("revision_id"),
-            "source_url": details.get("source_url")
+            "success":    True,
+            "available":  True,
+            "song_id":    song_id,
+            "source_url": details.get("source_url"),
         })
     except Exception as e:
         return jsonify({
-            "success": True,
+            "success":   True,
             "available": False,
-            "song_id": int(song_id),
-            "error": str(e)
+            "song_id":   song_id,
+            "error":     str(e),
         })
+
 
 @app.route("/api/download", methods=["GET", "POST"])
 def api_download():
-    """Télécharge le fichier GP5 et le sauvegarde localement."""
+    """
+    Télécharge le fichier GP depuis la source indiquée,
+    le sauvegarde dans PARTITIONS_DIR et le renvoie au navigateur.
+    """
     if request.method == "POST":
-        data = request.get_json(silent=True) or {}
-        song_id = str(data.get("id", "")).strip()
+        data      = request.get_json(silent=True) or {}
+        song_id   = str(data.get("id",     "")).strip()
+        source_id = str(data.get("source", songsterr.SOURCE_ID)).strip()
     else:
-        song_id = request.args.get("id", "").strip()
+        song_id   = request.args.get("id",     "").strip()
+        source_id = request.args.get("source", songsterr.SOURCE_ID).strip()
 
-    if not song_id or not song_id.isdigit():
-        return jsonify({"success": False, "error": "ID de morceau invalide"}), 400
+    if not song_id:
+        return jsonify({"success": False, "error": "ID de morceau manquant"}), 400
+
+    source    = _get_source(source_id)
+    if source is None:
+        return jsonify({"success": False, "error": f"Source inconnue : {source_id!r}"}), 400
+
+    parsed_id = _parse_id(song_id, source_id)
 
     try:
-        details = get_song_gp_source(int(song_id))
-        url_path = urllib.parse.urlparse(details["source_url"]).path
-        ext = Path(url_path).suffix.lower()
+        details   = source.get_song_gp_source(parsed_id)
+        source_url = details["source_url"]
+
+        # Détection de l'extension
+        url_path = urllib.parse.urlparse(source_url).path
+        ext      = Path(url_path).suffix.lower()
         if not ext:
-            for candidate_ext in [".gp5", ".gp4", ".gp3", ".gpx", ".gp"]:
-                if candidate_ext in details["source_url"].lower():
-                    ext = candidate_ext
+            for candidate in [".gp5", ".gp4", ".gp3", ".gpx", ".gp"]:
+                if candidate in source_url.lower():
+                    ext = candidate
                     break
             else:
-                ext = ".gp"
-        filename = f"{clean_filename(details['artist'])}_{clean_filename(details['title'])}{ext}"
+                # Fallback sur le storage_path MongoDB si disponible
+                ext = Path(song_id).suffix.lower() or ".gp"
+
+        filename    = f"{source.clean_filename(details['artist'])}_{source.clean_filename(details['title'])}{ext}"
         target_path = PARTITIONS_DIR / filename
 
-        download_gp_file(details["source_url"], target_path)
+        source.download_gp_file(source_url, target_path)
 
-        # Si direct=1, on envoie directement le flux de téléchargement au navigateur
         if request.args.get("direct") == "1":
             return send_file(
                 str(target_path),
                 as_attachment=True,
                 download_name=filename,
-                mimetype="application/octet-stream"
+                mimetype="application/octet-stream",
             )
 
         return jsonify({
-            "success": True,
+            "success":  True,
             "filename": filename,
-            "path": str(target_path),
-            "details": details
+            "path":     str(target_path),
+            "details":  details,
         })
     except Exception as e:
         return jsonify({"success": False, "error": f"Erreur de téléchargement : {str(e)}"}), 500
@@ -134,16 +304,18 @@ def api_download():
 
 @app.route("/api/local-files", methods=["GET"])
 def api_local_files():
-    """Liste les fichiers de partitions présents sur le serveur."""
+    """Liste les fichiers de partitions présents dans le dossier de téléchargement."""
     try:
-        files = []
-        for f in PARTITIONS_DIR.glob("*.*"):
-            if f.suffix.lower() in [".gp", ".gp5", ".gp4", ".gp3", ".gpx", ".mid", ".midi"]:
-                files.append({
-                    "name": f.name,
-                    "size": f.stat().st_size,
-                    "modified": f.stat().st_mtime
-                })
+        gp_extensions = {".gp", ".gp5", ".gp4", ".gp3", ".gpx", ".mid", ".midi"}
+        files = [
+            {
+                "name":     f.name,
+                "size":     f.stat().st_size,
+                "modified": f.stat().st_mtime,
+            }
+            for f in PARTITIONS_DIR.glob("*.*")
+            if f.suffix.lower() in gp_extensions
+        ]
         files.sort(key=lambda x: x["modified"], reverse=True)
         return jsonify({"success": True, "files": files})
     except Exception as e:
@@ -152,13 +324,13 @@ def api_local_files():
 
 @app.route("/api/local-download", methods=["GET"])
 def api_local_download():
-    """Télécharge un fichier existant du serveur."""
-    filename = request.args.get("file", "").strip()
+    """Télécharge un fichier déjà présent dans le dossier de téléchargement."""
+    filename  = request.args.get("file", "").strip()
     if not filename:
         return jsonify({"success": False, "error": "Nom de fichier manquant"}), 400
 
     safe_name = os.path.basename(filename)
-    target = PARTITIONS_DIR / safe_name
+    target    = PARTITIONS_DIR / safe_name
     if not target.exists() or not target.is_file():
         return jsonify({"success": False, "error": "Fichier introuvable"}), 404
 
@@ -166,11 +338,34 @@ def api_local_download():
         str(target),
         as_attachment=True,
         download_name=safe_name,
-        mimetype="application/octet-stream"
+        mimetype="application/octet-stream",
     )
 
 
-# Pour Gunicorn : l'objet WSGI est `app`
+# ---------------------------------------------------------------------------
+# Helpers internes
+# ---------------------------------------------------------------------------
+
+def _get_source(source_id: str):
+    """Retourne le module source correspondant à l'identifiant, ou None."""
+    for src in SOURCES:
+        if src.SOURCE_ID == source_id:
+            return src
+    return None
+
+
+def _parse_id(song_id: str, source_id: str):
+    """
+    Songsterr attend un entier ; les autres sources travaillent avec des chaînes.
+    """
+    if source_id == songsterr.SOURCE_ID and song_id.isdigit():
+        return int(song_id)
+    return song_id
+
+
+# ---------------------------------------------------------------------------
+# Point d'entrée
+# ---------------------------------------------------------------------------
 if __name__ == "__main__":
     port = int(sys.argv[1]) if len(sys.argv) > 1 else int(os.environ.get("PORT", 8080))
     print(f"🎸 Serveur Flask démarré sur : http://localhost:{port}")
