@@ -14,13 +14,13 @@ RUN groupadd -g 1000 appgroup && \
     useradd -u 1000 -g appgroup -s /bin/sh -m appuser
 
 # Déclare les variables d'environnement (valeurs vides par défaut)
-ENV KEEP_ALIVE_CHECK=""
-ENV SUPABASE_URL=""
-ENV SUPABASE_KEY=""
-ENV SUPABASE_BUCKET=""
-ENV MONGO_URI=""
-ENV MONGO_DBNAME=""
-ENV MONGO_COLLECTION_GPTAB_NAME=""
+#ENV KEEP_ALIVE_CHECK=""
+#ENV SUPABASE_URL=""
+#ENV SUPABASE_KEY=""
+#ENV SUPABASE_BUCKET=""
+#ENV MONGO_URI=""
+#ENV MONGO_DBNAME=""
+#ENV MONGO_COLLECTION_GPTAB_NAME=""
 
 # Installation des dépendances de production (Flask + Gunicorn)
 COPY requirements.txt ./
