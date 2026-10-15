@@ -9,27 +9,26 @@ ENV PYTHONUNBUFFERED=1 \
 # Répertoire de travail
 WORKDIR /app
 
+# Installation des certificats SSL racines (indispensable pour les handshakes SSL avec MongoDB Atlas et Supabase)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Mise à jour de pip et certifi pour garantir des liaisons TLS robustes
+RUN pip install --no-cache-dir --upgrade pip certifi
+
 # Création d'un utilisateur non-root pour la sécurité
 RUN groupadd -g 1000 appgroup && \
     useradd -u 1000 -g appgroup -s /bin/sh -m appuser
-
-# Déclare les variables d'environnement (valeurs vides par défaut)
-#ENV KEEP_ALIVE_CHECK=""
-#ENV SUPABASE_URL=""
-#ENV SUPABASE_KEY=""
-#ENV SUPABASE_BUCKET=""
-#ENV MONGO_URI=""
-#ENV MONGO_DBNAME=""
-#ENV MONGO_COLLECTION_GPTAB_NAME=""
 
 # Installation des dépendances de production (Flask + Gunicorn)
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copie des fichiers applicatifs
-COPY app.py songsterr.py myguitarpro.py index.html ./
+# Copie des fichiers applicatifs (assurez-vous que le nom du module correspond bien à vos fichiers, ex: mygppro.py ou myguitarpro.py)
+COPY app.py songsterr.py mygppro.py index.html ./
 
-# Attribution des droits sur le dossier de travail
+# Attribution des droits sur le dossier de travail et les certificats si nécessaire
 RUN chown -R appuser:appgroup /app
 
 # Exécution sous l'utilisateur non-root
