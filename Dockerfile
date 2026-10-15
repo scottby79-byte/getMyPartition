@@ -13,12 +13,20 @@ WORKDIR /app
 RUN groupadd -g 1000 appgroup && \
     useradd -u 1000 -g appgroup -s /bin/sh -m appuser
 
+# Déclare les variables d'environnement (valeurs vides par défaut)
+ENV SUPABASE_URL=""
+ENV SUPABASE_KEY=""
+ENV SUPABASE_BUCKET=""
+ENV MONGO_URI=""
+ENV MONGO_DBNAME=""
+ENV MONGO_COLLECTION_GPTAB_NAME=""
+
 # Installation des dépendances de production (Flask + Gunicorn)
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copie des fichiers applicatifs
-COPY app.py extract_partition.py index.html ./
+COPY app.py songsterr.py index.html ./
 
 # Attribution des droits sur le dossier de travail
 RUN chown -R appuser:appgroup /app

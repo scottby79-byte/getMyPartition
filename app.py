@@ -6,11 +6,15 @@ Compatible WSGI (Gunicorn en production, Flask dev server en local).
 
 import os
 import sys
+import time
+import threading
 import urllib.parse
 from pathlib import Path
 from flask import Flask, request, jsonify, send_file, send_from_directory
+from pymongo import MongoClient
+from supabase import create_client
 
-from extract_partition import (
+from songsterr import (
     search_songs,
     get_song_gp_source,
     download_gp_file,
@@ -18,10 +22,56 @@ from extract_partition import (
 )
 
 BASE_DIR = Path(__file__).resolve().parent
-PARTITIONS_DIR = BASE_DIR
+PARTITIONS_DIR = BASE_DIR / "download"
+PARTITIONS_DIR.mkdir(exist_ok=True)
 
 app = Flask(__name__, static_folder=str(BASE_DIR), static_url_path="")
 
+# Initialisation des clients pour le keep-alive
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+BUCKET_NAME = os.getenv("SUPABASE_BUCKET")
+MONGO_URI = os.getenv("MONGO_URI")
+
+# Initialisation sécurisée avec un timeout de connexion pour MongoDB (en millisecondes : 5000ms = 5s)
+try:
+    supabase = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL else None
+    mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000) if MONGO_URI else None
+    mongo_db = mongo_client["scottby79-byte"] if mongo_client else None
+except Exception:
+    supabase = None
+    mongo_db = None
+
+def background_keep_alive():
+    """
+    Tâche de fond qui ping MongoDB et Supabase toutes les 10 minutes 
+    avec un mécanisme de timeout pour éviter tout blocage.
+    """
+    while True:
+        time.sleep(600) # Attendre 10 minutes
+        print("🔄 [Keep-Alive] Ping interne vers MongoDB et Supabase...")
+        
+        # 1. Ping MongoDB Atlas avec timeout
+        if mongo_db is not None:
+            try:
+                # La commande ping de MongoDB respecte le serverSelectionTimeoutMS configuré
+                mongo_db.command("ping")
+                print("   -> MongoDB Atlas : OK")
+            except Exception as e:
+                print(f"   -> MongoDB Atlas Erreur (Timeout/Connexion) : {e}")
+
+        # 2. Ping Supabase Storage avec log explicite
+        if supabase is not None and BUCKET_NAME:
+            try:
+                # On récupère le résultat ou on force un appel effectif
+                res = supabase.storage.from_(BUCKET_NAME).list(options={"limit": 1})
+                print(f"   -> Supabase Storage : OK (Réponse reçue, éléments: {len(res) if isinstance(res, list) else 'OK'})")
+            except Exception as e:
+                print(f"   -> Supabase Storage Erreur (Exception levée) : {e}")
+
+# Lancement du thread en arrière-plan
+keep_alive_thread = threading.Thread(target=background_keep_alive, daemon=True)
+keep_alive_thread.start()
 
 @app.route("/")
 def index():
