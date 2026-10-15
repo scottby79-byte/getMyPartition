@@ -1,8 +1,5 @@
 - Add search on GProTab (gprotab.net)   Un site communautaire gratuit et très épuré spécialisé dans le partage de partitions Guitar Pro.API officielle : Pas d'API REST formelle documentée. Accessibilité : La structure du site est très simple (URL prévisibles, formulaires légers). C'est l'un des sites les plus faciles à scraper de manière éthique pour rechercher des morceaux et télécharger les fichiers .gp5
-- delete local file 
 - repair suggestion
-- add gp pro file in the supabase storage and add in a mogodb atlas => Create extract_mygtab.py qui respecte une interface commune
-- creation d'un keepalive du storage et de la bdd
 - keep_alive du conteneur avec https://cron-job.org/en/
 
 Pour configurer et injecter vos variables de manière sécurisée de GitHub vers Render (via Docker), la méthode standard consiste à stocker les secrets dans les GitHub Actions Secrets, puis à les passer au conteneur lors du déploiement ou directement dans la configuration de l'hébergeur.Voici la démarche complète et sécurisée :

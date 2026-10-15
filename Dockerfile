@@ -14,6 +14,7 @@ RUN groupadd -g 1000 appgroup && \
     useradd -u 1000 -g appgroup -s /bin/sh -m appuser
 
 # Déclare les variables d'environnement (valeurs vides par défaut)
+ENV KEEP_ALIVE_CHECK=""
 ENV SUPABASE_URL=""
 ENV SUPABASE_KEY=""
 ENV SUPABASE_BUCKET=""
@@ -26,7 +27,7 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copie des fichiers applicatifs
-COPY app.py songsterr.py index.html ./
+COPY app.py songsterr.py myguitarpro.py index.html ./
 
 # Attribution des droits sur le dossier de travail
 RUN chown -R appuser:appgroup /app

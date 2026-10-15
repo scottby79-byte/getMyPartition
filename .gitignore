@@ -4,3 +4,4 @@ import_gptab.py
 exec-app.sh
 download/
 .env
+testConn.py

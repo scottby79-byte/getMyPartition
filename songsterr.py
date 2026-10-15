@@ -16,6 +16,10 @@ from concurrent.futures import ThreadPoolExecutor
 USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64; rv:120.0) Gecko/20100101 Firefox/120.0"
 SONGSTERR_REFERER = "https://www.songsterr.com/"
 
+# Identifiants de source — requis par l'interface commune (app.py)
+SOURCE_ID    = "songsterr"
+SOURCE_LABEL = "Songsterr"
+
 
 def clean_filename(s: str) -> str:
     """Nettoie une chaîne pour en faire un nom de fichier valide."""

@@ -535,6 +535,38 @@
                 opacity: 1;
             }
         }
+        /* SOURCE GROUPS */
+        .source-group-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 4px 6px;
+            margin-top: 8px;
+        }
+
+        .source-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            border: 1px solid;
+            padding: 3px 12px;
+            border-radius: 999px;
+            font-size: 0.82rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+
+        .source-error {
+            font-size: 0.8rem;
+            color: #f87171;
+        }
+
+        .song-album {
+            font-size: 0.9rem;
+            color: var(--text-muted);
+            font-style: italic;
+        }
     </style>
 </head>
 <body>
@@ -733,7 +765,7 @@
                     throw new Error(data.error || 'Erreur lors de la recherche');
                 }
 
-                renderResults(data.results);
+                renderResults(data.groups);
             } catch (err) {
                 showToast(err.message, 'error');
             } finally {
@@ -767,12 +799,30 @@
             return '🎵';
         }
 
-        function renderResults(songs) {
+        // Icône et couleur selon la source
+        const SOURCE_META = {
+            'songsterr': { label: 'Songsterr',       color: '#f97316', icon: '🌐' },
+            'mygppro':   { label: 'Get My Partitions Band Suite', color: '#10b981', icon: '📁' },
+            // Ajouter les futures sources ici
+        };
+
+        function getSourceBadgeHtml(sourceId) {
+            const meta = SOURCE_META[sourceId] || { label: sourceId, color: '#64748b', icon: '🎵' };
+            return `<span class="source-badge" style="background:${meta.color}22;border-color:${meta.color}66;color:${meta.color}">${meta.icon} ${meta.label}</span>`;
+        }
+
+        /**
+         * Rendu des résultats groupés par source.
+         * @param {Array} groups - [{source_id, source_label, results[], error}]
+         */
+        function renderResults(groups) {
             resultsGrid.innerHTML = '';
             resultsSection.style.display = 'block';
 
-            if (!songs || songs.length === 0) {
-                resultsCount.textContent = '0';
+            const totalCount = groups.reduce((sum, g) => sum + (g.results?.length || 0), 0);
+            resultsCount.textContent = totalCount;
+
+            if (totalCount === 0) {
                 resultsGrid.innerHTML = `
                     <div class="empty-state">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -785,72 +835,89 @@
                 return;
             }
 
-            resultsCount.textContent = songs.length;
+            groups.forEach(group => {
+                if (!group.results || group.results.length === 0) return;
 
-            songs.forEach(song => {
-                const card = document.createElement('div');
-                card.className = 'song-card';
+                // En-tête de groupe (séparateur de source)
+                const groupHeader = document.createElement('div');
+                groupHeader.className = 'source-group-header';
+                groupHeader.innerHTML = `
+                    ${getSourceBadgeHtml(group.source_id)}
+                    <span class="count-badge">${group.results.length}</span>
+                    ${group.error ? `<span class="source-error">⚠️ ${group.error}</span>` : ''}
+                `;
+                resultsGrid.appendChild(groupHeader);
 
-                // Badges d'instruments
-                let tracksHtml = '';
-                if (song.tracks && song.tracks.length > 0) {
-                    tracksHtml = song.tracks.map(t => {
-                        const cls = getTrackClass(t.instrument || t.name);
-                        const icon = getTrackIcon(t.instrument || t.name);
-                        const name = t.name || t.instrument || 'Piste';
-                        return `<span class="track-badge ${cls}">${icon} ${name}</span>`;
-                    }).join('');
-                }
+                // Cartes de résultats
+                group.results.forEach(song => {
+                    const card = document.createElement('div');
+                    card.className = 'song-card';
 
-                card.innerHTML = `
-                    <div class="song-info">
-                        <div class="song-title-row">
-                            <span class="song-title">${song.title}</span>
-                            <span class="song-artist">${song.artist}</span>
-                        </div>
-                        <div class="tracks-list">
-                            ${tracksHtml || '<span class="track-badge">🎸 Tablature</span>'}
-                        </div>
-                    </div>
-                    <div class="song-actions">
-                        <a href="https://www.songsterr.com/a/wsa/${encodeURIComponent(song.artist.toLowerCase())}-${encodeURIComponent(song.title.toLowerCase())}-tab-s${song.songId}" 
-                           target="_blank" 
-                           rel="noopener" 
-                           class="btn-external" 
-                           title="Aperçu et lecture sur Songsterr">
+                    // Badges d'instruments
+                    let tracksHtml = '';
+                    if (song.tracks && song.tracks.length > 0) {
+                        tracksHtml = song.tracks.map(t => {
+                            const cls  = getTrackClass(t.instrument || t.name);
+                            const icon = getTrackIcon(t.instrument || t.name);
+                            const name = t.name || t.instrument || 'Piste';
+                            return `<span class="track-badge ${cls}">${icon} ${name}</span>`;
+                        }).join('');
+                    }
+
+                    // Lien lecteur (uniquement pour Songsterr)
+                    const playerLink = song.source === 'songsterr' ? `
+                        <a href="https://www.songsterr.com/a/wsa/${encodeURIComponent((song.artist||'').toLowerCase())}-${encodeURIComponent((song.title||'').toLowerCase())}-tab-s${song.songId}"
+                           target="_blank" rel="noopener" class="btn-external" title="Aperçu sur Songsterr">
                             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
                                 <polyline points="15 3 21 3 21 9"></polyline>
                                 <line x1="10" y1="14" x2="21" y2="3"></line>
                             </svg>
                             Player
-                        </a>
-                        <button class="btn-download" onclick="downloadSong(${song.songId}, this)">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                                <polyline points="7 10 12 15 17 10"></polyline>
-                                <line x1="12" y1="15" x2="12" y2="3"></line>
-                            </svg>
-                            Télécharger (Guitar Pro )
-                        </button>
-                    </div>
-                `;
-                resultsGrid.appendChild(card);
+                        </a>` : '';
+
+                    const songIdEncoded = encodeURIComponent(song.songId);
+                    const sourceEncoded = encodeURIComponent(song.source);
+
+                    card.innerHTML = `
+                        <div class="song-info">
+                            <div class="song-title-row">
+                                <span class="song-title">${song.title}</span>
+                                <span class="song-artist">${song.artist}</span>
+                                ${song.album ? `<span class="song-album">— ${song.album}</span>` : ''}
+                            </div>
+                            <div class="tracks-list">
+                                ${tracksHtml || '<span class="track-badge">🎸 Tablature</span>'}
+                            </div>
+                        </div>
+                        <div class="song-actions">
+                            ${playerLink}
+                            <button class="btn-download" onclick="downloadSong('${songIdEncoded}', '${sourceEncoded}', this)">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                    <polyline points="7 10 12 15 17 10"></polyline>
+                                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                                </svg>
+                                Télécharger
+                            </button>
+                        </div>
+                    `;
+                    resultsGrid.appendChild(card);
+                });
             });
         }
 
         // TÉLÉCHARGEMENT DU MORCEAU
-        async function downloadSong(songId, btn) {
+        async function downloadSong(songId, source, btn) {
             const originalContent = btn.innerHTML;
             btn.disabled = true;
             btn.innerHTML = `<div class="spinner"></div> Téléchargement...`;
 
             try {
-                // Appel API backend pour récupérer la source et enregistrer localement
                 const res = await fetch('/api/download', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ id: songId })
+                    body: JSON.stringify({ id: songId, source: source })
                 });
 
                 const data = await res.json();
@@ -858,9 +925,9 @@
                     throw new Error(data.error || 'Erreur de téléchargement');
                 }
 
-                showToast(`Partition '${data.filename}' enregistrée dans le dossier partitions !`);
-                
-                // Déclencher également le téléchargement direct dans le navigateur
+                showToast(`'${data.filename}' enregistrée dans le dossier download !`);
+
+                // Déclenche le téléchargement direct dans le navigateur
                 const dlLink = document.createElement('a');
                 dlLink.href = `/api/local-download?file=${encodeURIComponent(data.filename)}`;
                 dlLink.download = data.filename;
