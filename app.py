@@ -48,7 +48,7 @@ app = Flask(__name__, static_folder=str(BASE_DIR), static_url_path="")
 # ---------------------------------------------------------------------------
 
 # Initialisation sécurisée sans test booléen direct
-KEEP_ALIVE_CHECK = os.getenv("KEEP_ALIVE_CHECK")
+KEEP_ALIVE_CHECK = int(os.getenv("KEEP_ALIVE_CHECK"))
 SUPABASE_URL  = os.getenv("SUPABASE_URL")
 SUPABASE_KEY  = os.getenv("SUPABASE_KEY")
 BUCKET_NAME   = os.getenv("SUPABASE_BUCKET")
