@@ -25,8 +25,8 @@ RUN groupadd -g 1000 appgroup && \
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copie des fichiers applicatifs (assurez-vous que le nom du module correspond bien à vos fichiers, ex: mygppro.py ou myguitarpro.py)
-COPY app.py songsterr.py mygppro.py index.html ./
+# Copie des fichiers applicatifs (assurez-vous que le nom du module correspond bien à vos fichiers, ex: myguitarpro.py)
+COPY app.py songsterr.py myguitarpro.py index.html ./
 
 # Attribution des droits sur le dossier de travail et les certificats si nécessaire
 RUN chown -R appuser:appgroup /app
