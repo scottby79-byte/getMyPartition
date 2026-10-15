@@ -5,3 +5,4 @@ exec-app.sh
 download/
 .env
 testConn.py
+production.env
