@@ -59,7 +59,7 @@ SUPABASE_KEY  = os.getenv("SUPABASE_KEY")
 BUCKET_NAME   = os.getenv("SUPABASE_BUCKET")
 MONGO_URI     = os.getenv("MONGO_URI")
 MONGO_DBNAME  = os.getenv("MONGO_DBNAME", "GetMyPartition")
-MONGO_COLLECTION = os.getenv("MONGO_COLLECTION_GPTAB_NAME", "GuitarProTab")
+MONGO_COLLECTION_GPTAB_NAME = os.getenv("MONGO_COLLECTION_GPTAB_NAME", "GuitarProTab")
 MONGO_COLLECTION_SEARCH = os.getenv("MONGO_COLLECTION_SEARCH_NAME", "LastSearch")
 
 try:
@@ -68,7 +68,7 @@ try:
     if MONGO_URI:
         mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
         mongo_db = mongo_client[MONGO_DBNAME]
-        mongo_collection = mongo_db[MONGO_COLLECTION]
+        mongo_collection = mongo_db[MONGO_COLLECTION_GPTAB_NAME]
         mongo_search_collection = mongo_db[MONGO_COLLECTION_SEARCH]
     else:
         mongo_client = None
