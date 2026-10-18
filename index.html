@@ -7,6 +7,8 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <!-- Moteur de rendu et lecteur audio Guitar Pro alphaTab -->
+    <script src="https://cdn.jsdelivr.net/npm/@coderline/alphatab@1.8.4/dist/alphaTab.js"></script>
     <style>
         :root {
             --bg-primary: #0f1117;
@@ -567,6 +569,347 @@
             color: var(--text-muted);
             font-style: italic;
         }
+
+        /* BOUTON APERÇU / PLAYER */
+        .btn-preview {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            background: rgba(99, 102, 241, 0.16);
+            border: 1px solid rgba(99, 102, 241, 0.45);
+            color: #a5b4fc;
+            border-radius: var(--radius-md);
+            padding: 10px 16px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .btn-preview:hover {
+            background: var(--accent);
+            color: #ffffff;
+            border-color: var(--accent);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 14px rgba(99, 102, 241, 0.35);
+        }
+
+        /* MODAL DU PLAYER ALPHATAB */
+        .player-modal-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(8, 10, 16, 0.85);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            z-index: 10000;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+        }
+
+        .player-modal-backdrop.active {
+            display: flex;
+        }
+
+        .player-dialog {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            width: 100%;
+            max-width: 1350px;
+            height: 92vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+            animation: modalAppear 0.25s ease-out;
+        }
+
+        @keyframes modalAppear {
+            from {
+                opacity: 0;
+                transform: scale(0.97) translateY(12px);
+            }
+            to {
+                opacity: 1;
+                transform: scale(1) translateY(0);
+            }
+        }
+
+        /* HEADER DU PLAYER */
+        .player-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px 22px;
+            background: var(--bg-card);
+            border-bottom: 1px solid var(--border-color);
+            gap: 16px;
+            flex-shrink: 0;
+        }
+
+        .player-track-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            min-width: 0;
+        }
+
+        .player-title {
+            font-size: 1.15rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .player-artist {
+            font-size: 0.95rem;
+            color: #a5b4fc;
+            font-weight: 600;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .player-header-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-shrink: 0;
+        }
+
+        .player-icon-btn {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            color: var(--text-secondary);
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+
+        .player-icon-btn:hover {
+            color: var(--text-primary);
+            border-color: var(--text-muted);
+            background: #283042;
+        }
+
+        .player-close-btn {
+            color: #ef4444;
+        }
+
+        .player-close-btn:hover {
+            background: rgba(239, 68, 68, 0.15);
+            border-color: rgba(239, 68, 68, 0.4);
+            color: #f87171;
+        }
+
+        /* TOOLBAR DES CONTRÔLES */
+        .player-toolbar {
+            background: #151822;
+            border-bottom: 1px solid var(--border-color);
+            padding: 10px 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            flex-wrap: wrap;
+            flex-shrink: 0;
+        }
+
+        .player-controls-left {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .btn-play-main {
+            background: var(--accent-gradient);
+            color: #ffffff;
+            border: none;
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 0 15px rgba(99, 102, 241, 0.4);
+        }
+
+        .btn-play-main:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 20px rgba(99, 102, 241, 0.6);
+        }
+
+        .btn-play-main:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-player-action {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            color: var(--text-secondary);
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+
+        .btn-player-action:hover {
+            color: var(--text-primary);
+            border-color: var(--text-muted);
+        }
+
+        .btn-player-action.active {
+            background: rgba(99, 102, 241, 0.2);
+            border-color: var(--accent);
+            color: #818cf8;
+        }
+
+        .player-timeline-wrapper {
+            flex: 1;
+            min-width: 220px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .player-time-text {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.82rem;
+            color: var(--text-muted);
+            min-width: 90px;
+        }
+
+        .player-progress-bar {
+            flex: 1;
+            height: 8px;
+            background: var(--bg-card);
+            border-radius: 999px;
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+            border: 1px solid var(--border-color);
+        }
+
+        .player-progress-fill {
+            height: 100%;
+            width: 0%;
+            background: var(--accent-gradient);
+            border-radius: 999px;
+            transition: none;
+        }
+
+        .player-controls-right {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .player-select {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            padding: 7px 12px;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            font-family: inherit;
+            outline: none;
+            cursor: pointer;
+            max-width: 200px;
+        }
+
+        .player-select:focus {
+            border-color: var(--accent);
+        }
+
+        /* ZONE DE RENDU DE LA PARTITION */
+        .player-body {
+            flex: 1;
+            overflow: hidden;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .player-tab-viewport {
+            flex: 1;
+            overflow-y: auto;
+            overflow-x: hidden;
+            background: #ffffff;
+            position: relative;
+            padding: 30px 20px;
+            transition: background 0.2s ease;
+        }
+
+        .player-tab-viewport.dark-theme {
+            background: #141721;
+        }
+
+        .player-tab-viewport.dark-theme #alphaTab svg,
+        .player-tab-viewport.dark-theme #alphaTab canvas {
+            filter: invert(0.9) hue-rotate(180deg);
+        }
+
+        /* Spinner & état de chargement */
+        .player-loading-overlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(15, 17, 23, 0.94);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 16px;
+            z-index: 20;
+            transition: opacity 0.3s ease;
+        }
+
+        .player-loading-text {
+            font-size: 1.05rem;
+            color: var(--text-primary);
+            font-weight: 600;
+        }
+
+        .player-loading-subtext {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+
+        .player-error-overlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(15, 17, 23, 0.95);
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 14px;
+            z-index: 25;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .player-error-overlay.active {
+            display: flex;
+        }
     </style>
 </head>
 <body>
@@ -581,7 +924,6 @@
                 </svg>
                 Get My Partitions Band Suite
             </div>
-            <h1>Partitions Guitar Pro</h1>
             <p class="subtitle">Recherche instantanée et téléchargement des partitions GuitarPro</p>
         </header>
 
@@ -620,15 +962,10 @@
                     <span id="btnSearchText">Rechercher</span>
                 </button>
             </form>
-<!--
-            <div class="quick-suggestions">
-                <span>Suggestions rapides :</span>
-                <span class="suggestion-tag" onclick="quickFill('Izïa', 'Let Me Alone')">Izïa - Let Me Alone</span>
-                <span class="suggestion-tag" onclick="quickFill('Muse', 'Hysteria')">Muse - Hysteria</span>
-                <span class="suggestion-tag" onclick="quickFill('Nirvana', 'Smells Like Teen Spirit')">Nirvana - Smells Like Teen Spirit</span>
-                <span class="suggestion-tag" onclick="quickFill('Red Hot Chili Peppers', 'Californication')">RHCP - Californication</span>
+            <div class="quick-suggestions" id="quickSuggestions" style="display: none;">
+                <span class="suggestions-label">Dernières recherches :</span>
+                <div id="quickSuggestionsList" style="display: flex; align-items: center; flex-wrap: wrap; gap: 8px;"></div>
             </div>
--->
         </div>
 
         <!-- SEARCH RESULTS -->
@@ -679,6 +1016,125 @@
         </section>
     </div>
 
+    <!-- MODAL DU LECTEUR ALPHATAB -->
+    <div class="player-modal-backdrop" id="playerModal">
+        <div class="player-dialog">
+            <!-- HEADER -->
+            <div class="player-header">
+                <div class="player-track-info">
+                    <span id="playerSourceBadge"></span>
+                    <span class="player-title" id="playerTitle">Titre du morceau</span>
+                    <span class="player-artist" id="playerArtist">— Artiste</span>
+                </div>
+                <div class="player-header-actions">
+                    <button class="btn-player-action active" id="playerThemeToggle" title="Basculer le thème de la partition (Clair / Sombre)">
+                        <span>🌓</span>
+                        <span id="playerThemeText">TThème Sombre</span>
+                    </button>
+                    <button class="player-icon-btn" id="playerFullscreenBtn" title="Plein écran">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
+                        </svg>
+                    </button>
+                    <button class="player-icon-btn player-close-btn" id="playerCloseBtn" title="Fermer le lecteur (Échap)" onclick="closePlayer()">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <!-- TOOLBAR DES CONTRÔLES -->
+            <div class="player-toolbar">
+                <div class="player-controls-left">
+                    <button class="btn-play-main" id="playerPlayPauseBtn" title="Lecture / Pause (Espace)" disabled>
+                        <svg id="playIcon" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                            <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                        </svg>
+                    </button>
+                    <button class="btn-player-action" id="playerStopBtn" title="Arrêter la lecture" disabled>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                            <rect x="5" y="5" width="14" height="14" rx="2"></rect>
+                        </svg>
+                        Stop
+                    </button>
+                    <button class="btn-player-action" id="playerMetronomeBtn" title="Activer / Désactiver le métronome">
+                        <span>⏱️</span>
+                        <span>Métronome</span>
+                    </button>
+                    <button class="btn-player-action" id="playerLoopBtn" title="Boucle (Répéter le morceau)">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="17 1 21 5 17 9"></polyline>
+                            <path d="M3 11V9a4 4 0 0 1 4-4h14"></path>
+                            <polyline points="7 23 3 19 7 15"></polyline>
+                            <path d="M21 13v2a4 4 0 0 1-4 4H3"></path>
+                        </svg>
+                        Boucle
+                    </button>
+                </div>
+
+                <div class="player-timeline-wrapper">
+                    <span class="player-time-text" id="playerTime">0:00 / 0:00</span>
+                    <div class="player-progress-bar" id="playerProgressBar" title="Cliquer pour naviguer dans la tablature">
+                        <div class="player-progress-fill" id="playerProgressFill"></div>
+                    </div>
+                </div>
+
+                <div class="player-controls-right">
+                    <!-- Sélecteur de piste instrumentale -->
+                    <select class="player-select" id="playerTrackSelect" title="Choisir la piste instrumentale">
+                        <option value="0">Piste par défaut</option>
+                    </select>
+
+                    <!-- Sélecteur de tempo / vitesse -->
+                    <select class="player-select" id="playerSpeedSelect" title="Vitesse de lecture">
+                        <option value="0.5">0.5x</option>
+                        <option value="0.75">0.75x</option>
+                        <option value="0.9">0.9x</option>
+                        <option value="1" selected>1.0x (Normal)</option>
+                        <option value="1.1">1.1x</option>
+                        <option value="1.25">1.25x</option>
+                    </select>
+
+                    <!-- Affichage portée / tablature -->
+                    <select class="player-select" id="playerStaveSelect" title="Mode d'affichage">
+                        <option value="default" selected>Tab + Portée</option>
+                        <option value="tab">Tablature seule</option>
+                        <option value="score">Portée seule</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- BODY DU LECTEUR -->
+            <div class="player-body">
+                <!-- OVERLAY CHARGEMENT -->
+                <div class="player-loading-overlay" id="playerLoading">
+                    <div class="spinner" style="width: 42px; height: 42px; border-width: 3px;"></div>
+                    <div class="player-loading-text" id="playerLoadingText">Chargement de la partition...</div>
+                    <div class="player-loading-subtext">Initialisation du moteur audio & SoundFont</div>
+                </div>
+
+                <!-- OVERLAY ERREUR -->
+                <div class="player-error-overlay" id="playerError">
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="8" x2="12" y2="12"></line>
+                        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                    </svg>
+                    <div style="font-size: 1.15rem; font-weight: 600; color: #f87171;" id="playerErrorText">Impossible de charger cette partition</div>
+                    <p style="color: var(--text-muted); max-width: 480px;">Le fichier Guitar Pro est peut-être dans un format non supporté ou endommagé.</p>
+                    <button class="btn-external" onclick="closePlayer()">Fermer le lecteur</button>
+                </div>
+
+                <!-- CONTENEUR SCROLLABLE ALPHATAB -->
+                <div class="player-tab-viewport dark-theme" id="playerViewport">
+                    <div id="alphaTab"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- TOAST NOTIFICATIONS -->
     <div class="toast-container" id="toastContainer"></div>
 
@@ -712,10 +1168,114 @@
             }, 3500);
         }
 
-        function quickFill(artist, title) {
-            artistInput.value = artist;
-            titleInput.value = title;
-            searchForm.dispatchEvent(new Event('submit'));
+        function escapeHtml(str) {
+            if (!str) return '';
+            return String(str).replace(/[&<>"']/g, function(m) {
+                return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m];
+            });
+        }
+
+        // EXÉCUTION DE LA RECHERCHE
+        async function performSearch() {
+            const artist = artistInput.value.trim();
+            const title  = titleInput.value.trim();
+
+            if (!artist && !title) {
+                showToast("Veuillez indiquer un artiste ou un titre", "error");
+                return;
+            }
+
+            // État de chargement (spinner)
+            searchBtn.disabled = true;
+            btnSearchIcon.innerHTML = `<div class="spinner"></div>`;
+            btnSearchText.textContent = "Recherche...";
+
+            try {
+                const params = new URLSearchParams();
+                if (artist) params.append('artist', artist);
+                if (title) params.append('title', title);
+
+                const response = await fetch(`/api/search?${params.toString()}`);
+                const data = await response.json();
+
+                if (!response.ok || !data.success) {
+                    throw new Error(data.error || 'Erreur lors de la recherche');
+                }
+
+                renderResults(data.groups);
+
+                // Rafraîchir les suggestions récentes en arrière-plan
+                setTimeout(loadRecentSearches, 600);
+            } catch (err) {
+                showToast(err.message, 'error');
+            } finally {
+                searchBtn.disabled = false;
+                btnSearchIcon.innerHTML = `
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="11" cy="11" r="8"></circle>
+                        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                    </svg>
+                `;
+                btnSearchText.textContent = "Rechercher";
+            }
+        }
+
+        // SOUMISSION DU FORMULAIRE PAR L'UTILISATEUR (ENTRÉE OU BOUTON)
+        searchForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            performSearch();
+        });
+
+        // RECHERCHE DIRECTE DEPUIS UNE SUGGESTION
+        function quickFill(artist, title, query) {
+            if (artist || title) {
+                artistInput.value = artist || '';
+                titleInput.value = title || '';
+            } else if (query) {
+                artistInput.value = query;
+                titleInput.value = '';
+            }
+            performSearch();
+        }
+
+        function quickFillFromUri(artistEncoded, titleEncoded, queryEncoded) {
+            quickFill(
+                decodeURIComponent(artistEncoded || ''),
+                decodeURIComponent(titleEncoded || ''),
+                decodeURIComponent(queryEncoded || '')
+            );
+        }
+
+        async function loadRecentSearches() {
+            const container = document.getElementById('quickSuggestions');
+            const list = document.getElementById('quickSuggestionsList');
+            if (!container || !list) return;
+
+            try {
+                const res = await fetch('/api/recent-searches');
+                const data = await res.json();
+                if (!res.ok || !data.success) return;
+
+                const searches = data.searches || [];
+                if (searches.length === 0) {
+                    container.style.display = 'none';
+                    return;
+                }
+
+                list.innerHTML = searches.map(s => {
+                    const disp = s.display || s.query || `${s.artist || ''} - ${s.title || ''}`;
+                    const artistEnc = encodeURIComponent(s.artist || '');
+                    const titleEnc  = encodeURIComponent(s.title || '');
+                    const queryEnc  = encodeURIComponent(s.query || '');
+                    const safeLabel = escapeHtml(disp);
+
+                    return `<span class="suggestion-tag" onclick="quickFillFromUri('${artistEnc}', '${titleEnc}', '${queryEnc}')" title="Rechercher à nouveau">${safeLabel}</span>`;
+                }).join('');
+
+                container.style.display = 'flex';
+            } catch (err) {
+                console.warn('Erreur chargement suggestions récentes:', err);
+            }
         }
 
         function formatBytes(bytes) {
@@ -736,49 +1296,6 @@
                 minute: '2-digit'
             });
         }
-
-        // RECHERCHE
-        searchForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const artist = artistInput.value.trim();
-            const title = titleInput.value.trim();
-
-            if (!artist && !title) {
-                showToast("Veuillez indiquer un artiste ou un titre", "error");
-                return;
-            }
-
-            // Spinner state
-            searchBtn.disabled = true;
-            btnSearchIcon.innerHTML = `<div class="spinner"></div>`;
-            btnSearchText.textContent = "Recherche...";
-
-            try {
-                const params = new URLSearchParams();
-                if (artist) params.append('artist', artist);
-                if (title) params.append('title', title);
-
-                const response = await fetch(`/api/search?${params.toString()}`);
-                const data = await response.json();
-
-                if (!response.ok || !data.success) {
-                    throw new Error(data.error || 'Erreur lors de la recherche');
-                }
-
-                renderResults(data.groups);
-            } catch (err) {
-                showToast(err.message, 'error');
-            } finally {
-                searchBtn.disabled = false;
-                btnSearchIcon.innerHTML = `
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <circle cx="11" cy="11" r="8"></circle>
-                        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                    </svg>
-                `;
-                btnSearchText.textContent = "Rechercher";
-            }
-        });
 
         function getTrackClass(instName) {
             const name = (instName || '').toLowerCase();
@@ -864,20 +1381,22 @@
                         }).join('');
                     }
 
-                    // Lien lecteur (uniquement pour Songsterr)
-                    const playerLink = song.source === 'songsterr' ? `
+                    // Lien externe (uniquement pour Songsterr)
+                    const externalLink = song.source === 'songsterr' ? `
                         <a href="https://www.songsterr.com/a/wsa/${encodeURIComponent((song.artist||'').toLowerCase())}-${encodeURIComponent((song.title||'').toLowerCase())}-tab-s${song.songId}"
-                           target="_blank" rel="noopener" class="btn-external" title="Aperçu sur Songsterr">
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                           target="_blank" rel="noopener" class="btn-external" title="Voir sur le site Songsterr">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
                                 <polyline points="15 3 21 3 21 9"></polyline>
                                 <line x1="10" y1="14" x2="21" y2="3"></line>
                             </svg>
-                            Player
+                            Songsterr.com
                         </a>` : '';
 
                     const songIdEncoded = encodeURIComponent(song.songId);
                     const sourceEncoded = encodeURIComponent(song.source);
+                    const titleEncoded  = encodeURIComponent(song.title || '');
+                    const artistEncoded = encodeURIComponent(song.artist || '');
 
                     card.innerHTML = `
                         <div class="song-info">
@@ -891,7 +1410,13 @@
                             </div>
                         </div>
                         <div class="song-actions">
-                            ${playerLink}
+                            <button class="btn-preview" onclick="openPlayerFromUri('${songIdEncoded}', '${sourceEncoded}', '${titleEncoded}', '${artistEncoded}')" title="Écouter et afficher la tablature">
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                                </svg>
+                                Aperçu & Player
+                            </button>
+                            ${externalLink}
                             <button class="btn-download" onclick="downloadSong('${songIdEncoded}', '${sourceEncoded}', this)">
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
@@ -969,7 +1494,9 @@
                     return;
                 }
 
-                localFilesBody.innerHTML = files.map(file => `
+                localFilesBody.innerHTML = files.map(file => {
+                    const encodedName = encodeURIComponent(file.name);
+                    return `
                     <tr>
                         <td class="file-name-cell">
                             <span class="file-badge">${file.name.toLowerCase().endsWith('.gp5') ? 'GP5' : (file.name.toLowerCase().endsWith('.gp') ? 'GP' : 'TAB')}</span>
@@ -978,19 +1505,28 @@
                         <td>${formatBytes(file.size)}</td>
                         <td>${formatDate(file.modified)}</td>
                         <td>
-                            <a href="/api/local-download?file=${encodeURIComponent(file.name)}" 
-                               class="btn-external" 
-                               download="${file.name}">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                                    <polyline points="7 10 12 15 17 10"></polyline>
-                                    <line x1="12" y1="15" x2="12" y2="3"></line>
-                                </svg>
-                                Télécharger
-                            </a>
+                            <div style="display:flex;align-items:center;gap:8px;">
+                                <button class="btn-preview" style="padding:6px 12px;font-size:0.82rem;" onclick="openLocalPlayer('${encodedName}')" title="Aperçu du fichier local">
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                                    </svg>
+                                    Aperçu
+                                </button>
+                                <a href="/api/local-download?file=${encodedName}" 
+                                   class="btn-external" 
+                                   download="${file.name}">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                        <polyline points="7 10 12 15 17 10"></polyline>
+                                        <line x1="12" y1="15" x2="12" y2="3"></line>
+                                    </svg>
+                                    Télécharger
+                                </a>
+                            </div>
                         </td>
                     </tr>
-                `).join('');
+                    `;
+                }).join('');
             } catch (err) {
                 localFilesBody.innerHTML = `
                     <tr>
@@ -1002,8 +1538,351 @@
             }
         }
 
+        // ---------------------------------------------------------------------------
+        // LECTEUR & VISUALISEUR ALPHATAB
+        // ---------------------------------------------------------------------------
+        let currentAlphaTabApi = null;
+        let currentScore = null;
+        let isPlayerPlaying = false;
+        let isMetronomeActive = false;
+        let isLoopActive = false;
+        let currentDurationMs = 0;
+        let isDarkTheme = false;
+        let wakeLock = null;
+
+        const playerModal        = document.getElementById('playerModal');
+        const playerLoading      = document.getElementById('playerLoading');
+        const playerLoadingText  = document.getElementById('playerLoadingText');
+        const playerError        = document.getElementById('playerError');
+        const playerErrorText    = document.getElementById('playerErrorText');
+        const playerPlayPauseBtn = document.getElementById('playerPlayPauseBtn');
+        const playerStopBtn      = document.getElementById('playerStopBtn');
+        const playerMetronomeBtn = document.getElementById('playerMetronomeBtn');
+        const playerLoopBtn      = document.getElementById('playerLoopBtn');
+        const playerTrackSelect  = document.getElementById('playerTrackSelect');
+        const playerSpeedSelect  = document.getElementById('playerSpeedSelect');
+        const playerStaveSelect  = document.getElementById('playerStaveSelect');
+        const playerTime         = document.getElementById('playerTime');
+        const playerProgressBar  = document.getElementById('playerProgressBar');
+        const playerProgressFill = document.getElementById('playerProgressFill');
+        const playerTitle        = document.getElementById('playerTitle');
+        const playerArtist       = document.getElementById('playerArtist');
+        const playerSourceBadge  = document.getElementById('playerSourceBadge');
+        const playerThemeToggle  = document.getElementById('playerThemeToggle');
+        const playerThemeText    = document.getElementById('playerThemeText');
+        const playerFullscreenBtn = document.getElementById('playerFullscreenBtn');
+        const playerViewport     = document.getElementById('playerViewport');
+
+        // Fonction utilitaire pour demander le maintien de l'écran éveillé
+        async function requestWakeLock() {
+            if ('wakeLock' in navigator) {
+                try {
+                    wakeLock = await navigator.wakeLock.request('screen');
+                    wakeLock.addEventListener('release', () => {
+                        wakeLock = null;
+                    });
+                } catch (err) {
+                    console.warn(`Erreur Wake Lock : ${err.name}, ${err.message}`);
+                }
+            }
+        }
+
+        // Fonction utilitaire pour libérer le maintien d'écran
+        async function releaseWakeLock() {
+            if (wakeLock !== null) {
+                try {
+                    await wakeLock.release();
+                    wakeLock = null;
+                } catch (err) {
+                    console.warn(`Erreur Release Wake Lock : ${err.name}, ${err.message}`);
+                }
+            }
+        }
+
+        function formatPlayerTime(ms) {
+            if (!ms || isNaN(ms) || ms < 0) return '0:00';
+            const totalSeconds = Math.floor(ms / 1000);
+            const minutes = Math.floor(totalSeconds / 60);
+            const seconds = totalSeconds % 60;
+            return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+        }
+
+        function openPlayerFromUri(songIdEncoded, sourceEncoded, titleEncoded, artistEncoded) {
+            openPlayer(
+                decodeURIComponent(songIdEncoded),
+                decodeURIComponent(sourceEncoded),
+                decodeURIComponent(titleEncoded),
+                decodeURIComponent(artistEncoded)
+            );
+        }
+
+        function openLocalPlayer(filenameEncoded) {
+            const filename = decodeURIComponent(filenameEncoded);
+            const cleanTitle = filename.replace(/\.(gp[345x]?|gp)$/i, '').replace(/_/g, ' ');
+            openPlayer(filename, 'local', cleanTitle, 'Fichier local');
+        }
+
+        function openPlayer(songId, source, title, artist) {
+            playerModal.classList.add('active');
+            document.body.style.overflow = 'hidden';
+
+            // Demande à garder l'écran allumé (anti-verrouillage mobile)
+            requestWakeLock();
+
+            // Réinitialisation de l'état
+            playerLoading.style.display = 'flex';
+            playerLoading.style.opacity = '1';
+            playerLoadingText.textContent = 'Téléchargement de la partition...';
+            playerError.classList.remove('active');
+            playerPlayPauseBtn.disabled = true;
+            playerStopBtn.disabled = true;
+            playerProgressFill.style.width = '0%';
+            playerTime.textContent = '0:00 / 0:00';
+            playerTrackSelect.innerHTML = '<option value="0">Chargement des pistes...</option>';
+            playerSpeedSelect.value = '1';
+
+            playerTitle.textContent = title || 'Morceau';
+            playerArtist.textContent = artist ? `— ${artist}` : '';
+            playerSourceBadge.innerHTML = getSourceBadgeHtml(source);
+
+            // Arrêt et destruction de l'instance précédente
+            if (currentAlphaTabApi) {
+                try {
+                    currentAlphaTabApi.stop();
+                    currentAlphaTabApi.destroy();
+                } catch(e) {
+                    console.warn('Nettoyage alphaTab:', e);
+                }
+                currentAlphaTabApi = null;
+            }
+
+            // Réinitialisation du conteneur alphaTab
+            playerViewport.innerHTML = '<div id="alphaTab"></div>';
+            const container = document.getElementById('alphaTab');
+
+            // URL proxy Flask sécurisée (sans contrainte CORS, compatible bucket privé)
+            const tabFileUrl = source === 'local'
+                ? `/api/tab-file?source=local&file=${encodeURIComponent(songId)}`
+                : `/api/tab-file?source=${encodeURIComponent(source)}&id=${encodeURIComponent(songId)}`;
+
+            try {
+                const settings = {
+                    file: tabFileUrl,
+                    core: {
+                        engine: 'html5', // Rendu Canvas 2D accéléré (beaucoup plus fluide que SVG pour les animations)
+                        enableLazyLoading: true,
+                        useWorkers: true,
+                        fontDirectory: 'https://cdn.jsdelivr.net/npm/@coderline/alphatab@1.8.4/dist/font/',
+                    },
+                    display: {
+                        staveProfile: alphaTab.StaveProfile.Default,
+                        layoutMode: alphaTab.LayoutMode.Page,
+                    },
+                    player: {
+                        enablePlayer: true,
+                        soundFont: 'https://cdn.jsdelivr.net/npm/@coderline/alphatab@1.8.4/dist/soundfont/sonivox.sf2',
+                        scrollElement: playerViewport,
+                        scrollMode: alphaTab.ScrollMode.OffScreen, // Défilement par saut de ligne (évite le lag du scrolling continu milliseconde par milliseconde)
+                        scrollOffsetY: -60,
+                        enableAnimatedBeatCursor: false, // Supprime l'animation permanente à 60fps qui sature le thread audio/UI
+                        nativeBrowserSmoothScroll: false,
+                        scrollSpeed: 200,
+                    }
+                };
+
+                const api = new alphaTab.AlphaTabApi(container, settings);
+                currentAlphaTabApi = api;
+
+                // 1. Analyse de la partition réussie
+                api.scoreLoaded.on((score) => {
+                    currentScore = score;
+                    if (score.title && !title) playerTitle.textContent = score.title;
+                    if (score.artist && !artist) playerArtist.textContent = `— ${score.artist}`;
+
+                    // Remplissage des pistes disponibles
+                    playerTrackSelect.innerHTML = '';
+                    if (score.tracks && score.tracks.length > 0) {
+                        score.tracks.forEach((track, idx) => {
+                            const opt = document.createElement('option');
+                            opt.value = idx;
+                            opt.textContent = `${idx + 1}. ${track.name || 'Piste ' + (idx + 1)}`;
+                            playerTrackSelect.appendChild(opt);
+                        });
+                    } else {
+                        playerTrackSelect.innerHTML = '<option value="0">Piste principale</option>';
+                    }
+
+                    playerLoadingText.textContent = 'Génération du rendu et chargement de la SoundFont...';
+                });
+
+                // 2. Rendu graphique terminé
+                api.renderFinished.on(() => {
+                    playerLoading.style.opacity = '0';
+                    setTimeout(() => { playerLoading.style.display = 'none'; }, 300);
+                });
+
+                // 3. Audio prêt pour la lecture
+                api.playerReady.on(() => {
+                    playerPlayPauseBtn.disabled = false;
+                    playerStopBtn.disabled = false;
+                });
+
+                // 4. Changement d'état de lecture
+                api.playerStateChanged.on((args) => {
+                    isPlayerPlaying = (args.state === 1);
+                    const playIcon = document.getElementById('playIcon');
+                    if (isPlayerPlaying) {
+                        playIcon.innerHTML = `
+                            <rect x="6" y="4" width="4" height="16"></rect>
+                            <rect x="14" y="4" width="4" height="16"></rect>
+                        `;
+                    } else {
+                        playIcon.innerHTML = `
+                            <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                        `;
+                    }
+                });
+
+                // 5. Progression temporelle (optimisée sans reflows de texte excessifs)
+                let lastDisplayedSec = -1;
+                api.playerPositionChanged.on((args) => {
+                    currentDurationMs = args.endTime;
+                    const curSec = Math.floor(args.currentTime / 1000);
+                    if (curSec !== lastDisplayedSec) {
+                        lastDisplayedSec = curSec;
+                        playerTime.textContent = `${formatPlayerTime(args.currentTime)} / ${formatPlayerTime(args.endTime)}`;
+                    }
+                    if (args.endTime > 0) {
+                        const pct = Math.min(100, Math.max(0, (args.currentTime / args.endTime) * 100));
+                        playerProgressFill.style.width = `${pct}%`;
+                    }
+                });
+
+                // 6. Gestion des erreurs audio
+                if (api.soundFontLoadFailed) {
+                    api.soundFontLoadFailed.on(() => {
+                        showToast("Avertissement : la banque de sons audio n'a pas pu être chargée.", "error");
+                    });
+                }
+
+            } catch (err) {
+                console.error('Erreur lancement alphaTab:', err);
+                playerLoading.style.display = 'none';
+                playerError.classList.add('active');
+                playerErrorText.textContent = "Erreur lors du chargement : " + err.message;
+            }
+        }
+
+        function closePlayer() {
+            playerModal.classList.remove('active');
+            document.body.style.overflow = '';
+
+            // Libère le verrouillage d'écran pour économiser la batterie
+            releaseWakeLock();
+
+            if (currentAlphaTabApi) {
+                try {
+                    currentAlphaTabApi.stop();
+                    currentAlphaTabApi.destroy();
+                } catch(e) {
+                    console.warn('Erreur fermeture lecteur:', e);
+                }
+                currentAlphaTabApi = null;
+            }
+        }
+
+        // CONTRÔLES DU PLAYER
+        playerPlayPauseBtn.onclick = () => {
+            if (currentAlphaTabApi) currentAlphaTabApi.playPause();
+        };
+
+        playerStopBtn.onclick = () => {
+            if (currentAlphaTabApi) currentAlphaTabApi.stop();
+        };
+
+        playerMetronomeBtn.onclick = () => {
+            if (currentAlphaTabApi) {
+                isMetronomeActive = !isMetronomeActive;
+                currentAlphaTabApi.metronomeVolume = isMetronomeActive ? 1 : 0;
+                playerMetronomeBtn.classList.toggle('active', isMetronomeActive);
+            }
+        };
+
+        playerLoopBtn.onclick = () => {
+            if (currentAlphaTabApi) {
+                isLoopActive = !isLoopActive;
+                currentAlphaTabApi.isLooping = isLoopActive;
+                playerLoopBtn.classList.toggle('active', isLoopActive);
+            }
+        };
+
+        playerProgressBar.onclick = (e) => {
+            if (currentAlphaTabApi && currentDurationMs > 0) {
+                const rect = playerProgressBar.getBoundingClientRect();
+                const clickRatio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+                const targetMs = Math.floor(clickRatio * currentDurationMs);
+                currentAlphaTabApi.timePosition = targetMs;
+            }
+        };
+
+        playerTrackSelect.onchange = () => {
+            if (currentAlphaTabApi && currentScore) {
+                const trackIdx = parseInt(playerTrackSelect.value, 10);
+                if (currentScore.tracks && currentScore.tracks[trackIdx]) {
+                    currentAlphaTabApi.renderTracks([currentScore.tracks[trackIdx]]);
+                }
+            }
+        };
+
+        playerSpeedSelect.onchange = () => {
+            if (currentAlphaTabApi) {
+                currentAlphaTabApi.playbackSpeed = parseFloat(playerSpeedSelect.value);
+            }
+        };
+
+        playerStaveSelect.onchange = () => {
+            if (currentAlphaTabApi) {
+                let profile = alphaTab.StaveProfile.Default;
+                if (playerStaveSelect.value === 'tab') profile = alphaTab.StaveProfile.Tab;
+                else if (playerStaveSelect.value === 'score') profile = alphaTab.StaveProfile.Score;
+                currentAlphaTabApi.settings.display.staveProfile = profile;
+                currentAlphaTabApi.updateSettings();
+                currentAlphaTabApi.render();
+            }
+        };
+
+        playerThemeToggle.onclick = () => {
+            isDarkTheme = !isDarkTheme;
+            playerViewport.classList.toggle('dark-theme', isDarkTheme);
+            playerThemeText.textContent = isDarkTheme ? 'Thème Clair' : 'Thème Sombre';
+        };
+
+        playerFullscreenBtn.onclick = () => {
+            const dialog = document.querySelector('.player-dialog');
+            if (!document.fullscreenElement) {
+                dialog.requestFullscreen?.().catch(err => console.warn(err));
+            } else {
+                document.exitFullscreen?.().catch(err => console.warn(err));
+            }
+        };
+
+        // Raccourcis clavier (Espace pour Play/Pause, Échap pour fermer)
+        window.addEventListener('keydown', (e) => {
+            if (!playerModal.classList.contains('active')) return;
+
+            if (e.key === 'Escape') {
+                closePlayer();
+            } else if (e.code === 'Space' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'SELECT') {
+                e.preventDefault();
+                if (currentAlphaTabApi) {
+                    currentAlphaTabApi.playPause();
+                }
+            }
+        });
+
         // Chargement initial
         loadLocalFiles();
+        loadRecentSearches();
     </script>
 </body>
 </html>
