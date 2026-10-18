@@ -1,10 +1,6 @@
 __pycache__/
 .venv/
-import_gptab.py
-testConn.py
-tag_gptab.py
 exec-app.sh
 download/
 .env
-
 production.env
