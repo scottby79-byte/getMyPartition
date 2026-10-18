@@ -94,7 +94,7 @@ def search_songs(query: str) -> list[dict]:
             "title":  meta.get("title",  ""),
             "album":  meta.get("album",  ""),
             "source": SOURCE_ID,
-            "tracks": [],                     # pas d'info piste en base pour l'instant
+            "tracks": meta.get("tracks", []) if meta else [],                     # pas d'info piste en base pour l'instant
         })
 
     return results
