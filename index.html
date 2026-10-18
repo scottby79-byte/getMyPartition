@@ -963,12 +963,9 @@
                     <span id="btnSearchText">Rechercher</span>
                 </button>
             </form>
-            <div class="quick-suggestions">
-                <span>Suggestions rapides :</span>
-                <span class="suggestion-tag" onclick="quickFill('Izïa', 'Let Me Alone')">Izïa - Let Me Alone</span>
-                <span class="suggestion-tag" onclick="quickFill('Muse', 'Hysteria')">Muse - Hysteria</span>
-                <span class="suggestion-tag" onclick="quickFill('Nirvana', 'Smells Like Teen Spirit')">Nirvana - Smells Like Teen Spirit</span>
-                <span class="suggestion-tag" onclick="quickFill('Red Hot Chili Peppers', 'Californication')">RHCP - Californication</span>
+            <div class="quick-suggestions" id="quickSuggestions" style="display: none;">
+                <span class="suggestions-label">Dernières recherches :</span>
+                <div id="quickSuggestionsList" style="display: flex; align-items: center; flex-wrap: wrap; gap: 8px;"></div>
             </div>
         </div>
 
@@ -1172,10 +1169,114 @@
             }, 3500);
         }
 
-        function quickFill(artist, title) {
-            artistInput.value = artist;
-            titleInput.value = title;
-            searchForm.dispatchEvent(new Event('submit'));
+        function escapeHtml(str) {
+            if (!str) return '';
+            return String(str).replace(/[&<>"']/g, function(m) {
+                return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m];
+            });
+        }
+
+        // EXÉCUTION DE LA RECHERCHE
+        async function performSearch() {
+            const artist = artistInput.value.trim();
+            const title  = titleInput.value.trim();
+
+            if (!artist && !title) {
+                showToast("Veuillez indiquer un artiste ou un titre", "error");
+                return;
+            }
+
+            // État de chargement (spinner)
+            searchBtn.disabled = true;
+            btnSearchIcon.innerHTML = `<div class="spinner"></div>`;
+            btnSearchText.textContent = "Recherche...";
+
+            try {
+                const params = new URLSearchParams();
+                if (artist) params.append('artist', artist);
+                if (title) params.append('title', title);
+
+                const response = await fetch(`/api/search?${params.toString()}`);
+                const data = await response.json();
+
+                if (!response.ok || !data.success) {
+                    throw new Error(data.error || 'Erreur lors de la recherche');
+                }
+
+                renderResults(data.groups);
+
+                // Rafraîchir les suggestions récentes en arrière-plan
+                setTimeout(loadRecentSearches, 600);
+            } catch (err) {
+                showToast(err.message, 'error');
+            } finally {
+                searchBtn.disabled = false;
+                btnSearchIcon.innerHTML = `
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="11" cy="11" r="8"></circle>
+                        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                    </svg>
+                `;
+                btnSearchText.textContent = "Rechercher";
+            }
+        }
+
+        // SOUMISSION DU FORMULAIRE PAR L'UTILISATEUR (ENTRÉE OU BOUTON)
+        searchForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            performSearch();
+        });
+
+        // RECHERCHE DIRECTE DEPUIS UNE SUGGESTION
+        function quickFill(artist, title, query) {
+            if (artist || title) {
+                artistInput.value = artist || '';
+                titleInput.value = title || '';
+            } else if (query) {
+                artistInput.value = query;
+                titleInput.value = '';
+            }
+            performSearch();
+        }
+
+        function quickFillFromUri(artistEncoded, titleEncoded, queryEncoded) {
+            quickFill(
+                decodeURIComponent(artistEncoded || ''),
+                decodeURIComponent(titleEncoded || ''),
+                decodeURIComponent(queryEncoded || '')
+            );
+        }
+
+        async function loadRecentSearches() {
+            const container = document.getElementById('quickSuggestions');
+            const list = document.getElementById('quickSuggestionsList');
+            if (!container || !list) return;
+
+            try {
+                const res = await fetch('/api/recent-searches');
+                const data = await res.json();
+                if (!res.ok || !data.success) return;
+
+                const searches = data.searches || [];
+                if (searches.length === 0) {
+                    container.style.display = 'none';
+                    return;
+                }
+
+                list.innerHTML = searches.map(s => {
+                    const disp = s.display || s.query || `${s.artist || ''} - ${s.title || ''}`;
+                    const artistEnc = encodeURIComponent(s.artist || '');
+                    const titleEnc  = encodeURIComponent(s.title || '');
+                    const queryEnc  = encodeURIComponent(s.query || '');
+                    const safeLabel = escapeHtml(disp);
+
+                    return `<span class="suggestion-tag" onclick="quickFillFromUri('${artistEnc}', '${titleEnc}', '${queryEnc}')" title="Rechercher à nouveau">${safeLabel}</span>`;
+                }).join('');
+
+                container.style.display = 'flex';
+            } catch (err) {
+                console.warn('Erreur chargement suggestions récentes:', err);
+            }
         }
 
         function formatBytes(bytes) {
@@ -1196,49 +1297,6 @@
                 minute: '2-digit'
             });
         }
-
-        // RECHERCHE
-        searchForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const artist = artistInput.value.trim();
-            const title = titleInput.value.trim();
-
-            if (!artist && !title) {
-                showToast("Veuillez indiquer un artiste ou un titre", "error");
-                return;
-            }
-
-            // Spinner state
-            searchBtn.disabled = true;
-            btnSearchIcon.innerHTML = `<div class="spinner"></div>`;
-            btnSearchText.textContent = "Recherche...";
-
-            try {
-                const params = new URLSearchParams();
-                if (artist) params.append('artist', artist);
-                if (title) params.append('title', title);
-
-                const response = await fetch(`/api/search?${params.toString()}`);
-                const data = await response.json();
-
-                if (!response.ok || !data.success) {
-                    throw new Error(data.error || 'Erreur lors de la recherche');
-                }
-
-                renderResults(data.groups);
-            } catch (err) {
-                showToast(err.message, 'error');
-            } finally {
-                searchBtn.disabled = false;
-                btnSearchIcon.innerHTML = `
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <circle cx="11" cy="11" r="8"></circle>
-                        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                    </svg>
-                `;
-                btnSearchText.textContent = "Rechercher";
-            }
-        });
 
         function getTrackClass(instName) {
             const name = (instName || '').toLowerCase();
@@ -1791,6 +1849,7 @@
 
         // Chargement initial
         loadLocalFiles();
+        loadRecentSearches();
     </script>
 </body>
 </html>

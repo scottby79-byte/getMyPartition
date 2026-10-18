@@ -23,6 +23,7 @@ import threading
 import io
 import urllib.request
 import urllib.parse
+from datetime import datetime, timezone
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -59,6 +60,7 @@ BUCKET_NAME   = os.getenv("SUPABASE_BUCKET")
 MONGO_URI     = os.getenv("MONGO_URI")
 MONGO_DBNAME  = os.getenv("MONGO_DBNAME", "GetMyPartition")
 MONGO_COLLECTION = os.getenv("MONGO_COLLECTION_GPTAB_NAME", "GuitarProTab")
+MONGO_COLLECTION_SEARCH = os.getenv("MONGO_COLLECTION_SEARCH_NAME", "LastSearch")
 
 try:
     supabase_client = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL else None
@@ -67,16 +69,19 @@ try:
         mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
         mongo_db = mongo_client[MONGO_DBNAME]
         mongo_collection = mongo_db[MONGO_COLLECTION]
+        mongo_search_collection = mongo_db[MONGO_COLLECTION_SEARCH]
     else:
         mongo_client = None
         mongo_db = None
         mongo_collection = None
+        mongo_search_collection = None
 except Exception as e:
     print(f"❌ Erreur lors de l'initialisation des clients cloud : {e}")
-    supabase_client  = None
-    mongo_client     = None
-    mongo_db         = None
-    mongo_collection = None
+    supabase_client         = None
+    mongo_client            = None
+    mongo_db                = None
+    mongo_collection        = None
+    mongo_search_collection = None
 
 # Injection des dépendances dans la source mygppro
 myguitarpro.init(
@@ -137,6 +142,70 @@ def index():
     return send_from_directory(str(BASE_DIR), "index.html")
 
 
+def record_search(artist: str, title: str, search_term: str):
+    """
+    Enregistre la recherche effectuée dans la collection LastSearch de MongoDB.
+    Met à jour la date et incrémente le compteur sans créer de doublon.
+    """
+    if mongo_search_collection is None:
+        return
+    try:
+        clean_artist = (artist or "").strip()
+        clean_title  = (title or "").strip()
+        clean_term   = (search_term or "").strip()
+
+        if not clean_term:
+            return
+
+        # Libellé lisible pour les tags de suggestion
+        display_label = f"{clean_artist} - {clean_title}" if clean_artist and clean_title else (clean_artist or clean_title or clean_term)
+
+        # Clé unique pour dédupliquer proprement
+        if clean_artist and clean_title:
+            search_key = f"{clean_artist.lower()}__{clean_title.lower()}"
+        else:
+            search_key = clean_term.lower()
+
+        mongo_search_collection.update_one(
+            {"search_key": search_key},
+            {
+                "$set": {
+                    "search_key": search_key,
+                    "artist": clean_artist,
+                    "title": clean_title,
+                    "query": clean_term,
+                    "display": display_label,
+                    "updated_at": datetime.now(timezone.utc),
+                },
+                "$inc": {"count": 1}
+            },
+            upsert=True
+        )
+    except Exception as e:
+        print(f"⚠️ [Mongo LastSearch] Erreur d'enregistrement : {e}")
+
+
+@app.route("/api/recent-searches", methods=["GET"])
+def api_recent_searches():
+    """
+    Retourne les 20 dernières recherches enregistrées dans MongoDB,
+    triées de la plus récente à la plus ancienne.
+    """
+    if mongo_search_collection is None:
+        return jsonify({"success": True, "searches": []})
+
+    try:
+        cursor = mongo_search_collection.find(
+            {},
+            {"_id": 0, "artist": 1, "title": 1, "query": 1, "display": 1}
+        ).sort("updated_at", -1).limit(20)
+
+        searches = list(cursor)
+        return jsonify({"success": True, "searches": searches})
+    except Exception as e:
+        return jsonify({"success": False, "error": f"Erreur lors de la récupération des recherches : {e}"}), 500
+
+
 @app.route("/api/search", methods=["GET"])
 def api_search():
     """
@@ -151,6 +220,9 @@ def api_search():
     search_term = query or f"{artist} {title}".strip()
     if not search_term:
         return jsonify({"success": False, "error": "Veuillez fournir un nom d'artiste ou un titre"}), 400
+
+    # Enregistrement asynchrone de la recherche pour ne pas impacter la réactivité
+    threading.Thread(target=record_search, args=(artist, title, search_term), daemon=True).start()
 
     # Interrogation parallèle de toutes les sources
     results_by_source: dict[str, list] = {}
