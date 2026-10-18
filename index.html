@@ -813,7 +813,7 @@
             width: 0%;
             background: var(--accent-gradient);
             border-radius: 999px;
-            transition: width 0.1s linear;
+            transition: none;
         }
 
         .player-controls-right {
@@ -1584,6 +1584,9 @@
                 const settings = {
                     file: tabFileUrl,
                     core: {
+                        engine: 'html5', // Rendu Canvas 2D accéléré (beaucoup plus fluide que SVG pour les animations)
+                        enableLazyLoading: true,
+                        useWorkers: true,
                         fontDirectory: 'https://cdn.jsdelivr.net/npm/@coderline/alphatab@1.8.4/dist/font/',
                     },
                     display: {
@@ -1594,6 +1597,11 @@
                         enablePlayer: true,
                         soundFont: 'https://cdn.jsdelivr.net/npm/@coderline/alphatab@1.8.4/dist/soundfont/sonivox.sf2',
                         scrollElement: playerViewport,
+                        scrollMode: alphaTab.ScrollMode.OffScreen, // Défilement par saut de ligne (évite le lag du scrolling continu milliseconde par milliseconde)
+                        scrollOffsetY: -60,
+                        enableAnimatedBeatCursor: false, // Supprime l'animation permanente à 60fps qui sature le thread audio/UI
+                        nativeBrowserSmoothScroll: false,
+                        scrollSpeed: 200,
                     }
                 };
 
@@ -1650,10 +1658,15 @@
                     }
                 });
 
-                // 5. Progression temporelle
+                // 5. Progression temporelle (optimisée sans reflows de texte excessifs)
+                let lastDisplayedSec = -1;
                 api.playerPositionChanged.on((args) => {
                     currentDurationMs = args.endTime;
-                    playerTime.textContent = `${formatPlayerTime(args.currentTime)} / ${formatPlayerTime(args.endTime)}`;
+                    const curSec = Math.floor(args.currentTime / 1000);
+                    if (curSec !== lastDisplayedSec) {
+                        lastDisplayedSec = curSec;
+                        playerTime.textContent = `${formatPlayerTime(args.currentTime)} / ${formatPlayerTime(args.endTime)}`;
+                    }
                     if (args.endTime > 0) {
                         const pct = Math.min(100, Math.max(0, (args.currentTime / args.endTime) * 100));
                         playerProgressFill.style.width = `${pct}%`;
