@@ -20,6 +20,8 @@ import os
 import sys
 import time
 import threading
+import io
+import urllib.request
 import urllib.parse
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -33,6 +35,8 @@ import songsterr
 import myguitarpro
 
 load_dotenv()
+if not os.getenv("MONGO_URI") and Path("production.env").exists():
+    load_dotenv("production.env")
 
 # ---------------------------------------------------------------------------
 # Répertoires
@@ -47,8 +51,8 @@ app = Flask(__name__, static_folder=str(BASE_DIR), static_url_path="")
 # Initialisation des services cloud
 # ---------------------------------------------------------------------------
 
-# Initialisation sécurisée sans test booléen direct
-KEEP_ALIVE_CHECK = int(os.getenv("KEEP_ALIVE_CHECK"))
+# Initialisation sécurisée avec valeur par défaut si non renseigné
+KEEP_ALIVE_CHECK = int(os.getenv("KEEP_ALIVE_CHECK", "600"))
 SUPABASE_URL  = os.getenv("SUPABASE_URL")
 SUPABASE_KEY  = os.getenv("SUPABASE_KEY")
 BUCKET_NAME   = os.getenv("SUPABASE_BUCKET")
@@ -340,6 +344,76 @@ def api_local_download():
         download_name=safe_name,
         mimetype="application/octet-stream",
     )
+
+
+@app.route("/api/tab-file", methods=["GET"])
+def api_tab_file():
+    """
+    Sert le contenu binaire d'une partition Guitar Pro (pour le lecteur alphaTab),
+    évitant tout problème de restriction CORS ou d'accès à un bucket privé Supabase.
+    """
+    source_id = request.args.get("source", "").strip()
+
+    # Source locale (fichier dans le dossier download/)
+    if source_id == "local":
+        filename = request.args.get("file", "").strip()
+        if not filename:
+            return jsonify({"success": False, "error": "Nom de fichier manquant"}), 400
+        safe_name = os.path.basename(filename)
+        target = PARTITIONS_DIR / safe_name
+        if not target.exists() or not target.is_file():
+            return jsonify({"success": False, "error": "Fichier local introuvable"}), 404
+        return send_file(
+            str(target),
+            mimetype="application/octet-stream",
+            as_attachment=False,
+            download_name=safe_name,
+        )
+
+    song_id = request.args.get("id", "").strip()
+    if not song_id:
+        return jsonify({"success": False, "error": "ID de partition manquant"}), 400
+
+    source = _get_source(source_id)
+    if source is None:
+        return jsonify({"success": False, "error": f"Source inconnue : {source_id!r}"}), 400
+
+    parsed_id = _parse_id(song_id, source_id)
+
+    try:
+        if source_id == myguitarpro.SOURCE_ID:
+            content, filename = myguitarpro.get_file_bytes(parsed_id)
+        else:
+            # Source externe (ex: Songsterr)
+            details = source.get_song_gp_source(parsed_id)
+            source_url = details["source_url"]
+
+            url_path = urllib.parse.urlparse(source_url).path
+            ext = Path(url_path).suffix.lower()
+            if not ext:
+                for candidate in [".gp5", ".gp4", ".gp3", ".gpx", ".gp"]:
+                    if candidate in source_url.lower():
+                        ext = candidate
+                        break
+                else:
+                    ext = ".gp"
+
+            filename = f"{source.clean_filename(details.get('artist', ''))}_{source.clean_filename(details.get('title', ''))}{ext}"
+            req = urllib.request.Request(
+                source_url,
+                headers={"User-Agent": getattr(source, "USER_AGENT", "GetMyPartition/1.0")}
+            )
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                content = resp.read()
+
+        return send_file(
+            io.BytesIO(content),
+            mimetype="application/octet-stream",
+            as_attachment=False,
+            download_name=filename,
+        )
+    except Exception as e:
+        return jsonify({"success": False, "error": f"Impossible de charger la partition : {str(e)}"}), 500
 
 
 # ---------------------------------------------------------------------------

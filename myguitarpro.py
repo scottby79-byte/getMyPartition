@@ -8,6 +8,7 @@ Dépendances : pymongo, supabase (injectées depuis app.py via init())
 """
 
 import re
+import urllib.request
 import urllib.parse
 from pathlib import Path
 
@@ -152,8 +153,6 @@ def download_gp_file(source_url: str, output_path: Path) -> Path:
     et le sauvegarde sur disque.
     Réutilise la même implémentation que songsterr.py.
     """
-    import urllib.request
-
     req = urllib.request.Request(source_url, headers={"User-Agent": "GetMyPartition/1.0"})
     with urllib.request.urlopen(req, timeout=30) as response:
         content = response.read()
@@ -163,6 +162,42 @@ def download_gp_file(source_url: str, output_path: Path) -> Path:
         f.write(content)
 
     return output_path
+
+
+def get_file_bytes(song_id: str) -> tuple[bytes, str]:
+    """
+    Télécharge et retourne les octets du fichier Guitar Pro depuis Supabase ainsi que son nom de fichier.
+    """
+    if not is_available():
+        raise RuntimeError("La source Ma bibliothèque n'est pas disponible (MongoDB/Supabase non configuré).")
+
+    decoded_song_id = urllib.parse.unquote(song_id)
+
+    # Récupération des métadonnées pour nommer proprement le fichier
+    filename = Path(decoded_song_id).name
+    try:
+        doc = _mongo_collection.find_one({"storage_path": decoded_song_id})
+        if doc:
+            meta = doc.get("metadata", {})
+            artist = clean_filename(meta.get("artist", ""))
+            title = clean_filename(meta.get("title", ""))
+            ext = Path(decoded_song_id).suffix or ".gp"
+            if artist and title:
+                filename = f"{artist}_{title}{ext}"
+    except Exception:
+        pass
+
+    # Récupération directe depuis Supabase Storage
+    try:
+        content = _supabase_client.storage.from_(_bucket_name).download(decoded_song_id)
+        return content, filename
+    except Exception:
+        # Fallback via URL signée si le download direct échoue
+        signed_info = get_song_gp_source(decoded_song_id)
+        req = urllib.request.Request(signed_info["source_url"], headers={"User-Agent": "GetMyPartition/1.0"})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            content = resp.read()
+        return content, filename
 
 
 def clean_filename(s: str) -> str:
