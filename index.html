@@ -924,7 +924,6 @@
                 </svg>
                 Get My Partitions Band Suite
             </div>
-            <!--<h1>Partitions Guitar Pro</h1>-->
             <p class="subtitle">Recherche instantanée et téléchargement des partitions GuitarPro</p>
         </header>
 
@@ -1549,6 +1548,7 @@
         let isLoopActive = false;
         let currentDurationMs = 0;
         let isDarkTheme = false;
+        let wakeLock = null;
 
         const playerModal        = document.getElementById('playerModal');
         const playerLoading      = document.getElementById('playerLoading');
@@ -1572,6 +1572,32 @@
         const playerThemeText    = document.getElementById('playerThemeText');
         const playerFullscreenBtn = document.getElementById('playerFullscreenBtn');
         const playerViewport     = document.getElementById('playerViewport');
+
+        // Fonction utilitaire pour demander le maintien de l'écran éveillé
+        async function requestWakeLock() {
+            if ('wakeLock' in navigator) {
+                try {
+                    wakeLock = await navigator.wakeLock.request('screen');
+                    wakeLock.addEventListener('release', () => {
+                        wakeLock = null;
+                    });
+                } catch (err) {
+                    console.warn(`Erreur Wake Lock : ${err.name}, ${err.message}`);
+                }
+            }
+        }
+
+        // Fonction utilitaire pour libérer le maintien d'écran
+        async function releaseWakeLock() {
+            if (wakeLock !== null) {
+                try {
+                    await wakeLock.release();
+                    wakeLock = null;
+                } catch (err) {
+                    console.warn(`Erreur Release Wake Lock : ${err.name}, ${err.message}`);
+                }
+            }
+        }
 
         function formatPlayerTime(ms) {
             if (!ms || isNaN(ms) || ms < 0) return '0:00';
@@ -1599,6 +1625,9 @@
         function openPlayer(songId, source, title, artist) {
             playerModal.classList.add('active');
             document.body.style.overflow = 'hidden';
+
+            // Demande à garder l'écran allumé (anti-verrouillage mobile)
+            requestWakeLock();
 
             // Réinitialisation de l'état
             playerLoading.style.display = 'flex';
@@ -1747,6 +1776,10 @@
         function closePlayer() {
             playerModal.classList.remove('active');
             document.body.style.overflow = '';
+
+            // Libère le verrouillage d'écran pour économiser la batterie
+            releaseWakeLock();
+
             if (currentAlphaTabApi) {
                 try {
                     currentAlphaTabApi.stop();
