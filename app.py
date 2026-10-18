@@ -205,6 +205,13 @@ def api_recent_searches():
     except Exception as e:
         return jsonify({"success": False, "error": f"Erreur lors de la récupération des recherches : {e}"}), 500
 
+@app.route("/api/healthcheck", methods=["GET"])
+def api_healthcheck():
+    """
+    Retourne une 200 OK pour cron-job.org,
+    """
+    return jsonify({"success": True, "status": "OK"})
+
 
 @app.route("/api/search", methods=["GET"])
 def api_search():
