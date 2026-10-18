@@ -19,7 +19,7 @@ DB_NAME       = os.getenv("MONGO_DBNAME", "GetMyPartition")
 COLLECTION_NAME = os.getenv("MONGO_COLLECTION_GPTAB_NAME", "GuitarProTab")
 
 # Chemin vers le dossier racine contenant vos sous-dossiers et fichiers .gp*
-LOCAL_ROOT_DIR = Path("/media/florent/Data/workspaces/WK_VS_Code/getMyPartition/download")
+LOCAL_ROOT_DIR = Path("/media/florent/Data/Florent_data/Mes Medias/Guitar_Pro/guitare-et-couleurs.com")
 
 # Initialisation des clients
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
