@@ -26,7 +26,8 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copie des fichiers applicatifs (assurez-vous que le nom du module correspond bien à vos fichiers, ex: myguitarpro.py)
-COPY app.py songsterr.py myguitarpro.py index.html ./
+COPY app.py songsterr.py myguitarpro.py index.html sw.js manifest.json icon-192.png icon-512.png ./
+
 
 # Attribution des droits sur le dossier de travail et les certificats si nécessaire
 RUN chown -R appuser:appgroup /app
