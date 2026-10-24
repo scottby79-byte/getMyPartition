@@ -863,6 +863,20 @@
             background: #141721;
         }
 
+        .player-icon-btn:hover {
+            background: var(--bg-tertiary, var(--bg-secondary));
+            color: var(--text-primary);
+            border-color: var(--border-color-hover, var(--border-color));
+        }
+
+        .player-icon-btn:active {
+            transform: scale(0.95);
+        }
+
+        .player-icon-btn svg {
+            display: block;
+        }
+
         .player-tab-viewport.dark-theme #alphaTab svg,
         .player-tab-viewport.dark-theme #alphaTab canvas {
             filter: invert(0.9) hue-rotate(180deg);
@@ -1030,6 +1044,12 @@
                     <button class="btn-player-action active" id="playerThemeToggle" title="Basculer le thème de la partition (Clair / Sombre)">
                         <span>🌓</span>
                         <span id="playerThemeText">TThème Sombre</span>
+                    </button>
+                    <button id="playerDownloadBtn" class="player-icon-btn" title="Télécharger la partition" onclick="downloadCurrentTab()">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M12 16a1 1 0 0 1-.707-.293l-5-5a1 1 0 0 1 1.414-1.414L11 12.586V3a1 1 0 0 1 2 0v9.586l3.293-3.293a1 1 0 0 1 1.414 1.414l-5 5A1 1 0 0 1 12 16z"/>
+                            <path d="M20 21H4a1 1 0 0 1 0-2h16a1 1 0 0 1 0 2z"/>
+                        </svg>
                     </button>
                     <button class="player-icon-btn" id="playerFullscreenBtn" title="Plein écran">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -1549,6 +1569,9 @@
         let currentDurationMs = 0;
         let isDarkTheme = false;
         let wakeLock = null;
+        let currentSongId = null;
+        let currentSource = null;
+        let currentSongTitle = 'partition';
 
         const playerModal        = document.getElementById('playerModal');
         const playerLoading      = document.getElementById('playerLoading');
@@ -1622,7 +1645,36 @@
             openPlayer(filename, 'local', cleanTitle, 'Fichier local');
         }
 
+        function downloadCurrentTab() {
+            if (!currentSongId || !currentSource) {
+                showToast("Aucun fichier à télécharger.", "error");
+                return;
+            }
+
+            // Construction de l'URL proxy Flask sécurisée identique à celle du player
+            const downloadUrl = currentSource === 'local'
+                ? `/api/tab-file?source=local&file=${encodeURIComponent(currentSongId)}`
+                : `/api/tab-file?source=${encodeURIComponent(currentSource)}&id=${encodeURIComponent(currentSongId)}`;
+
+            // Création d'un lien invisible pour déclencher le téléchargement du fichier brut
+            const a = document.createElement('a');
+            a.href = downloadUrl;
+            
+            // Nettoyage du nom de fichier pour l'enregistrement
+            const safeTitle = currentSongTitle.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+            a.download = `${safeTitle}.gp5`; // ou extension par défaut
+            
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }
+
         function openPlayer(songId, source, title, artist) {
+            // Mémorisation pour le téléchargement
+            currentSongId = songId;
+            currentSource = source;
+            currentSongTitle = title || 'partition';
+
             playerModal.classList.add('active');
             document.body.style.overflow = 'hidden';
 
