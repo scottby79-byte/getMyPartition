@@ -41,6 +41,83 @@ def is_available() -> bool:
                 _bucket_name])
 
 
+def make_fuzzy_regex(term: str) -> str:
+    """
+    Construit une expression régulière tolérante aux accents,
+    aux différents types d'apostrophes (droite ' ou courbe ’),
+    et aux séparateurs (espaces, tirets, underscores).
+    """
+    char_map = {
+        "a": "[aàâäáãåAÀÂÄÁÃÅ]",
+        "à": "[aàâäáãåAÀÂÄÁÃÅ]",
+        "â": "[aàâäáãåAÀÂÄÁÃÅ]",
+        "ä": "[aàâäáãåAÀÂÄÁÃÅ]",
+        "e": "[eéèêëEÉÈÊË]",
+        "é": "[eéèêëEÉÈÊË]",
+        "è": "[eéèêëEÉÈÊË]",
+        "ê": "[eéèêëEÉÈÊË]",
+        "ë": "[eéèêëEÉÈÊË]",
+        "i": "[iîïíIÎÏÍ]",
+        "î": "[iîïíIÎÏÍ]",
+        "ï": "[iîïíIÎÏÍ]",
+        "o": "[oôöóõOÔÖÓÕ]",
+        "ô": "[oôöóõOÔÖÓÕ]",
+        "ö": "[oôöóõOÔÖÓÕ]",
+        "u": "[uùûüúUÙÛÜÚ]",
+        "ù": "[uùûüúUÙÛÜÚ]",
+        "û": "[uùûüúUÙÛÜÚ]",
+        "ü": "[uùûüúUÙÛÜÚ]",
+        "c": "[cçCÇ]",
+        "ç": "[cçCÇ]",
+        "n": "[nñNÑ]",
+        "'": "['’`]",
+        "’": "['’`]",
+        "`": "['’`]",
+    }
+    pattern_parts = []
+    for ch in term:
+        lower = ch.lower()
+        if lower in char_map:
+            pattern_parts.append(char_map[lower])
+        elif ch in (" ", "_", "-"):
+            pattern_parts.append(r"[\s_\-]+")
+        else:
+            pattern_parts.append(re.escape(ch))
+    return "".join(pattern_parts)
+
+
+def _find_song_doc(song_id: str):
+    """
+    Recherche un document par storage_path ou filename,
+    en testant aussi la version URL-décodée pour supporter
+    les caractères spéciaux, apostrophes et accents.
+    """
+    if _mongo_collection is None:
+        return None
+
+    # 1. Test direct storage_path
+    doc = _mongo_collection.find_one({"storage_path": song_id})
+    if doc:
+        return doc
+
+    # 2. Test direct filename
+    doc = _mongo_collection.find_one({"filename": song_id})
+    if doc:
+        return doc
+
+    # 3. Test version URL-décodée
+    decoded = urllib.parse.unquote(song_id)
+    if decoded != song_id:
+        doc = _mongo_collection.find_one({"storage_path": decoded})
+        if doc:
+            return doc
+        doc = _mongo_collection.find_one({"filename": decoded})
+        if doc:
+            return doc
+
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Interface commune (mirror de songsterr.py)
 # ---------------------------------------------------------------------------
@@ -48,34 +125,26 @@ def is_available() -> bool:
 def search_songs(query: str) -> list[dict]:
     """
     Recherche des morceaux dans la collection MongoDB.
-    Retourne une liste de dicts normalisés identiques au format Songsterr.
-
-    Format de sortie par élément :
-      {
-        "songId"  : str  (= storage_path, identifiant unique dans cette source)
-        "artist"  : str,
-        "title"   : str,
-        "album"   : str,
-        "source"  : SOURCE_ID,
-        "tracks"  : []   (non disponible dans MongoDB pour l'instant)
-      }
+    Gère les accents, apostrophes et caractères spéciaux.
     """
     if not is_available():
         return []
 
-    # Construction du filtre MongoDB : recherche sur artist ET title
     terms = query.strip().split()
     if not terms:
         return []
 
-    # Chaque terme doit être présent dans artist OU title (insensible à la casse)
+    # Chaque terme doit être présent dans artist, title OU filename (insensible à la casse et aux accents)
     conditions = []
     for term in terms:
-        pattern = re.compile(re.escape(term), re.IGNORECASE)
+        regex_pattern = make_fuzzy_regex(term)
+        pattern = re.compile(regex_pattern, re.IGNORECASE)
         conditions.append({
             "$or": [
                 {"metadata.artist": {"$regex": pattern}},
                 {"metadata.title":  {"$regex": pattern}},
+                {"filename":        {"$regex": pattern}},
+                {"storage_path":    {"$regex": pattern}},
             ]
         })
 
@@ -95,7 +164,7 @@ def search_songs(query: str) -> list[dict]:
             "title":  meta.get("title",  ""),
             "album":  meta.get("album",  ""),
             "source": SOURCE_ID,
-            "tracks": meta.get("tracks", []) if meta else [],                     # pas d'info piste en base pour l'instant
+            "tracks": meta.get("tracks", []) if meta else [],
         })
 
     return results
@@ -104,46 +173,34 @@ def search_songs(query: str) -> list[dict]:
 def get_song_gp_source(song_id: str) -> dict:
     """
     Récupère l'URL signée Supabase du fichier Guitar Pro correspondant
-    au storage_path (song_id).
-
-    Format de sortie :
-      {
-        "song_id"    : str,
-        "artist"     : str,
-        "title"      : str,
-        "source_url" : str  (URL signée Supabase, valide 300 s),
-        "source"     : SOURCE_ID,
-        "tracks"     : []
-      }
+    au storage_path ou filename (song_id).
     """
     if not is_available():
         raise RuntimeError("La source Ma bibliothèque n'est pas disponible (MongoDB/Supabase non configuré).")
 
-    # Décodage de l'URL/chemin reçu (ex: conversion de %20 en espaces)
-    decoded_song_id = urllib.parse.unquote(song_id)
-
-    doc = _mongo_collection.find_one({"storage_path": decoded_song_id})
+    doc = _find_song_doc(song_id)
     if not doc:
-        raise ValueError(f"Partition introuvable en base pour le chemin : {decoded_song_id!r}")
+        raise ValueError(f"Partition introuvable en base pour l'identifiant : {song_id!r}")
 
+    storage_path = doc.get("storage_path") or song_id
     meta = doc.get("metadata", {})
 
-    # Génération d'une URL signée temporaire (5 minutes) en utilisant la version décodée
+    # Génération d'une URL signée temporaire (5 minutes)
     signed = _supabase_client.storage.from_(_bucket_name).create_signed_url(
-        path=decoded_song_id,
+        path=storage_path,
         expires_in=300
     )
     signed_url = signed.get("signedURL") or signed.get("signedUrl", "")
     if not signed_url:
-        raise RuntimeError(f"Impossible de générer l'URL signée pour : {decoded_song_id!r}")
+        raise RuntimeError(f"Impossible de générer l'URL signée pour : {storage_path!r}")
 
     return {
-        "song_id":    decoded_song_id,
+        "song_id":    storage_path,
         "artist":     meta.get("artist", ""),
         "title":      meta.get("title",  ""),
         "source_url": signed_url,
         "source":     SOURCE_ID,
-        "tracks":     [],
+        "tracks":     meta.get("tracks", []),
     }
 
 
@@ -151,7 +208,6 @@ def download_gp_file(source_url: str, output_path: Path) -> Path:
     """
     Télécharge le fichier Guitar Pro depuis l'URL signée Supabase
     et le sauvegarde sur disque.
-    Réutilise la même implémentation que songsterr.py.
     """
     req = urllib.request.Request(source_url, headers={"User-Agent": "GetMyPartition/1.0"})
     with urllib.request.urlopen(req, timeout=30) as response:
@@ -171,29 +227,38 @@ def get_file_bytes(song_id: str) -> tuple[bytes, str]:
     if not is_available():
         raise RuntimeError("La source Ma bibliothèque n'est pas disponible (MongoDB/Supabase non configuré).")
 
-    decoded_song_id = urllib.parse.unquote(song_id)
+    doc = _find_song_doc(song_id)
+    storage_path = doc.get("storage_path") if doc else song_id
 
-    # Récupération des métadonnées pour nommer proprement le fichier
-    filename = Path(decoded_song_id).name
-    try:
-        doc = _mongo_collection.find_one({"storage_path": decoded_song_id})
+    # Récupération du meilleur nom de fichier avec vrais accents et apostrophes
+    if doc and doc.get("filename"):
+        filename = doc["filename"]
+    else:
+        filename = Path(storage_path).name
         if doc:
             meta = doc.get("metadata", {})
             artist = clean_filename(meta.get("artist", ""))
             title = clean_filename(meta.get("title", ""))
-            ext = Path(decoded_song_id).suffix or ".gp"
+            ext = Path(storage_path).suffix or ".gp"
             if artist and title:
                 filename = f"{artist}_{title}{ext}"
-    except Exception:
-        pass
 
     # Récupération directe depuis Supabase Storage
     try:
-        content = _supabase_client.storage.from_(_bucket_name).download(decoded_song_id)
+        content = _supabase_client.storage.from_(_bucket_name).download(storage_path)
         return content, filename
     except Exception:
-        # Fallback via URL signée si le download direct échoue
-        signed_info = get_song_gp_source(decoded_song_id)
+        # Fallback 1 : essayer unquoted storage_path
+        unquoted = urllib.parse.unquote(storage_path)
+        if unquoted != storage_path:
+            try:
+                content = _supabase_client.storage.from_(_bucket_name).download(unquoted)
+                return content, filename
+            except Exception:
+                pass
+
+        # Fallback 2 : via URL signée si le download direct échoue
+        signed_info = get_song_gp_source(storage_path)
         req = urllib.request.Request(signed_info["source_url"], headers={"User-Agent": "GetMyPartition/1.0"})
         with urllib.request.urlopen(req, timeout=30) as resp:
             content = resp.read()
@@ -201,5 +266,14 @@ def get_file_bytes(song_id: str) -> tuple[bytes, str]:
 
 
 def clean_filename(s: str) -> str:
-    """Nettoie une chaîne pour en faire un nom de fichier valide."""
-    return re.sub(r'[\\/*?:"<>|]', "", s).strip().replace(" ", "_")
+    """
+    Nettoie une chaîne pour en faire un nom de fichier valide,
+    en préservant les accents, apostrophes et caractères valides.
+    """
+    if not s:
+        return ""
+    # Supprime uniquement les caractères interdits sur les systèmes de fichiers et contrôles HTTP
+    cleaned = re.sub(r'[\r\n\t\x00-\x1f\\/*?:"<>|]', "", str(s)).strip()
+    cleaned = re.sub(r'\s+', '_', cleaned)
+    cleaned = re.sub(r'_+', '_', cleaned)
+    return cleaned
