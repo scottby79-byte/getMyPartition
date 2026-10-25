@@ -7,6 +7,7 @@ Utilisable en ligne de commande ou comme module pour le serveur web.
 import sys
 import json
 import re
+import threading
 import urllib.request
 import urllib.parse
 from pathlib import Path
@@ -15,6 +16,23 @@ from concurrent.futures import ThreadPoolExecutor
 
 USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64; rv:120.0) Gecko/20100101 Firefox/120.0"
 SONGSTERR_REFERER = "https://www.songsterr.com/"
+
+# Cache des détails de morceaux pour éviter les requêtes répétées et accélérer les clics aperçu/téléchargement
+_CACHE_MAX_SIZE = 500
+_details_cache: dict[int, dict] = {}
+_details_cache_lock = threading.Lock()
+
+def _cache_get(song_id: int):
+    with _details_cache_lock:
+        return _details_cache.get(song_id)
+
+def _cache_set(song_id: int, details: dict):
+    with _details_cache_lock:
+        if len(_details_cache) >= _CACHE_MAX_SIZE:
+            keys_to_remove = list(_details_cache.keys())[:100]
+            for k in keys_to_remove:
+                _details_cache.pop(k, None)
+        _details_cache[song_id] = details
 
 # Identifiants de source — requis par l'interface commune (app.py)
 SOURCE_ID    = "songsterr"
@@ -62,7 +80,11 @@ def _fetch_revision(rev_id: int):
 
 
 def search_songs(query: str) -> list:
-    """Recherche des morceaux sur Songsterr par mot-clé (artiste et/ou titre)."""
+    """
+    Recherche des morceaux sur Songsterr par mot-clé (artiste et/ou titre)
+    et filtre automatiquement pour ne renvoyer que les morceaux disposant
+    d'une véritable partition Guitar Pro (.gp/.gp5/.gp4/.gp3/.gpx).
+    """
     encoded_query = urllib.parse.quote(query.strip())
     url = f"https://www.songsterr.com/api/songs?pattern={encoded_query}"
     
@@ -71,9 +93,41 @@ def search_songs(query: str) -> list:
         headers={"User-Agent": USER_AGENT, "Referer": SONGSTERR_REFERER}
     )
     
-    with urllib.request.urlopen(req, timeout=10) as response:
-        data = json.loads(response.read().decode("utf-8"))
-        return data
+    try:
+        with urllib.request.urlopen(req, timeout=10) as response:
+            data = json.loads(response.read().decode("utf-8"))
+    except Exception:
+        return []
+
+    if not isinstance(data, list):
+        return []
+
+    # Étape 1 : Pré-filtrage rapide des morceaux manifestement sans tablature
+    candidates = [
+        song for song in data
+        if song.get("hasPlayer") and song.get("tracks")
+    ]
+
+    # Étape 2 : Vérification parallèle de l'existence d'une source Guitar Pro
+    def _validate_candidate(song):
+        sid = song.get("songId")
+        if not sid:
+            return None
+        try:
+            details = get_song_gp_source(sid)
+            if details and details.get("source_url"):
+                return song
+        except Exception:
+            return None
+        return None
+
+    valid_songs = []
+    with ThreadPoolExecutor(max_workers=min(10, len(candidates) or 1)) as pool:
+        for res in pool.map(_validate_candidate, candidates):
+            if res is not None:
+                valid_songs.append(res)
+
+    return valid_songs
 
 
 def get_song_gp_source(song_id: int) -> dict:
@@ -84,6 +138,10 @@ def get_song_gp_source(song_id: int) -> dict:
     parcourt automatiquement l'historique des révisions pour trouver la version
     Guitar Pro valide la plus récente.
     """
+    cached = _cache_get(song_id)
+    if cached:
+        return cached
+
     # Étape 1 : Récupérer les métadonnées pour avoir le dernier revisionId
     meta_url = f"https://www.songsterr.com/api/meta/{song_id}"
     req_meta = urllib.request.Request(
@@ -177,7 +235,7 @@ def get_song_gp_source(song_id: int) -> dict:
             "Cette tablature a probablement été saisie sur l'éditeur Songsterr sans fichier importé."
         )
 
-    return {
+    res = {
         "song_id": song_id,
         "revision_id": selected_rev_id,
         "artist": meta_data.get("artist"),
@@ -185,6 +243,8 @@ def get_song_gp_source(song_id: int) -> dict:
         "source_url": source_url,
         "tracks": rev_data.get("tracks", []) if rev_data else [],
     }
+    _cache_set(song_id, res)
+    return res
 
 
 def download_gp_file(source_url: str, output_path: Path) -> Path:
