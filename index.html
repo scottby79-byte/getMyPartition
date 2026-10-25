@@ -1200,6 +1200,11 @@
             });
         }
 
+        function encodeParam(str) {
+            if (!str) return '';
+            return encodeURIComponent(String(str)).replace(/'/g, '%27');
+        }
+
         // EXÉCUTION DE LA RECHERCHE
         async function performSearch() {
             const artist = artistInput.value.trim();
@@ -1289,9 +1294,9 @@
 
                 list.innerHTML = searches.map(s => {
                     const disp = s.display || s.query || `${s.artist || ''} - ${s.title || ''}`;
-                    const artistEnc = encodeURIComponent(s.artist || '');
-                    const titleEnc  = encodeURIComponent(s.title || '');
-                    const queryEnc  = encodeURIComponent(s.query || '');
+                    const artistEnc = encodeParam(s.artist || '');
+                    const titleEnc  = encodeParam(s.title || '');
+                    const queryEnc  = encodeParam(s.query || '');
                     const safeLabel = escapeHtml(disp);
 
                     return `<span class="suggestion-tag" onclick="quickFillFromUri('${artistEnc}', '${titleEnc}', '${queryEnc}')" title="Rechercher à nouveau">${safeLabel}</span>`;
@@ -1418,17 +1423,21 @@
                             Songsterr.com
                         </a>` : '';
 
-                    const songIdEncoded = encodeURIComponent(song.songId);
-                    const sourceEncoded = encodeURIComponent(song.source);
-                    const titleEncoded  = encodeURIComponent(song.title || '');
-                    const artistEncoded = encodeURIComponent(song.artist || '');
+                    const songIdEncoded = encodeParam(song.songId);
+                    const sourceEncoded = encodeParam(song.source);
+                    const titleEncoded  = encodeParam(song.title || '');
+                    const artistEncoded = encodeParam(song.artist || '');
+
+                    const safeTitle  = escapeHtml(song.title || 'Sans titre');
+                    const safeArtist = escapeHtml(song.artist || 'Artiste inconnu');
+                    const safeAlbum  = song.album ? `— ${escapeHtml(song.album)}` : '';
 
                     card.innerHTML = `
                         <div class="song-info">
                             <div class="song-title-row">
-                                <span class="song-title">${song.title}</span>
-                                <span class="song-artist">${song.artist}</span>
-                                ${song.album ? `<span class="song-album">— ${song.album}</span>` : ''}
+                                <span class="song-title">${safeTitle}</span>
+                                <span class="song-artist">${safeArtist}</span>
+                                ${safeAlbum ? `<span class="song-album">${safeAlbum}</span>` : ''}
                             </div>
                             <div class="tracks-list">
                                 ${tracksHtml || '<span class="track-badge">🎸 Tablature</span>'}
@@ -1442,7 +1451,7 @@
                                 Aperçu & Player
                             </button>
                             ${externalLink}
-                            <button class="btn-download" onclick="downloadSong('${songIdEncoded}', '${sourceEncoded}', this)">
+                            <button class="btn-download" onclick="downloadSongFromUri('${songIdEncoded}', '${sourceEncoded}', this)">
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
                                     <polyline points="7 10 12 15 17 10"></polyline>
@@ -1455,6 +1464,11 @@
                     resultsGrid.appendChild(card);
                 });
             });
+        }
+
+        // TÉLÉCHARGEMENT DU MORCEAU (DEPUIS LE BOUTON RESULTAT)
+        function downloadSongFromUri(songIdEncoded, sourceEncoded, btn) {
+            downloadSong(decodeURIComponent(songIdEncoded), decodeURIComponent(sourceEncoded), btn);
         }
 
         // TÉLÉCHARGEMENT DU MORCEAU
@@ -1520,12 +1534,14 @@
                 }
 
                 localFilesBody.innerHTML = files.map(file => {
-                    const encodedName = encodeURIComponent(file.name);
+                    const encodedName = encodeParam(file.name);
+                    const safeFileName = escapeHtml(file.name);
+                    const uriEncodedForLink = encodeURIComponent(file.name);
                     return `
                     <tr>
                         <td class="file-name-cell">
                             <span class="file-badge">${file.name.toLowerCase().endsWith('.gp5') ? 'GP5' : (file.name.toLowerCase().endsWith('.gp') ? 'GP' : 'TAB')}</span>
-                            ${file.name}
+                            ${safeFileName}
                         </td>
                         <td>${formatBytes(file.size)}</td>
                         <td>${formatDate(file.modified)}</td>
@@ -1537,9 +1553,9 @@
                                     </svg>
                                     Aperçu
                                 </button>
-                                <a href="/api/local-download?file=${encodedName}" 
+                                <a href="/api/local-download?file=${uriEncodedForLink}" 
                                    class="btn-external" 
-                                   download="${file.name}">
+                                   download="${safeFileName}">
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
                                         <polyline points="7 10 12 15 17 10"></polyline>
@@ -1656,19 +1672,13 @@
                 return;
             }
 
-            // Construction de l'URL proxy Flask sécurisée identique à celle du player
+            // Téléchargement direct avec conservation du nom original, des accents et de la bonne extension
             const downloadUrl = currentSource === 'local'
-                ? `/api/tab-file?source=local&file=${encodeURIComponent(currentSongId)}`
-                : `/api/tab-file?source=${encodeURIComponent(currentSource)}&id=${encodeURIComponent(currentSongId)}`;
+                ? `/api/local-download?file=${encodeURIComponent(currentSongId)}`
+                : `/api/tab-file?source=${encodeURIComponent(currentSource)}&id=${encodeURIComponent(currentSongId)}&download=1`;
 
-            // Création d'un lien invisible pour déclencher le téléchargement du fichier brut
             const a = document.createElement('a');
             a.href = downloadUrl;
-            
-            // Nettoyage du nom de fichier pour l'enregistrement
-            const safeTitle = currentSongTitle.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-            a.download = `${safeTitle}.gp5`; // ou extension par défaut
-            
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);

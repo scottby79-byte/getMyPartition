@@ -362,7 +362,13 @@ def api_download():
                 # Fallback sur le storage_path MongoDB si disponible
                 ext = Path(song_id).suffix.lower() or ".gp"
 
-        filename    = f"{source.clean_filename(details['artist'])}_{source.clean_filename(details['title'])}{ext}"
+        artist_clean = source.clean_filename(details.get('artist', ''))
+        title_clean  = source.clean_filename(details.get('title', ''))
+        if artist_clean and title_clean:
+            base_name = f"{artist_clean}_{title_clean}"
+        else:
+            base_name = artist_clean or title_clean or "partition"
+        filename    = f"{base_name}{ext}"
         target_path = PARTITIONS_DIR / filename
 
         source.download_gp_file(source_url, target_path)
@@ -415,7 +421,12 @@ def api_local_download():
     safe_name = os.path.basename(filename)
     target    = PARTITIONS_DIR / safe_name
     if not target.exists() or not target.is_file():
-        return jsonify({"success": False, "error": "Fichier introuvable"}), 404
+        unquoted = urllib.parse.unquote(safe_name)
+        if (PARTITIONS_DIR / unquoted).is_file():
+            target = PARTITIONS_DIR / unquoted
+            safe_name = unquoted
+        else:
+            return jsonify({"success": False, "error": "Fichier introuvable"}), 404
 
     return send_file(
         str(target),
@@ -428,9 +439,10 @@ def api_local_download():
 @app.route("/api/tab-file", methods=["GET"])
 def api_tab_file():
     """
-    Sert le contenu binaire d'une partition Guitar Pro (pour le lecteur alphaTab),
+    Sert le contenu binaire d'une partition Guitar Pro (pour le lecteur alphaTab ou le téléchargement),
     évitant tout problème de restriction CORS ou d'accès à un bucket privé Supabase.
     """
+    is_download = request.args.get("download") == "1"
     source_id = request.args.get("source", "").strip()
 
     # Source locale (fichier dans le dossier download/)
@@ -441,11 +453,16 @@ def api_tab_file():
         safe_name = os.path.basename(filename)
         target = PARTITIONS_DIR / safe_name
         if not target.exists() or not target.is_file():
-            return jsonify({"success": False, "error": "Fichier local introuvable"}), 404
+            unquoted = urllib.parse.unquote(safe_name)
+            if (PARTITIONS_DIR / unquoted).is_file():
+                target = PARTITIONS_DIR / unquoted
+                safe_name = unquoted
+            else:
+                return jsonify({"success": False, "error": "Fichier local introuvable"}), 404
         return send_file(
             str(target),
             mimetype="application/octet-stream",
-            as_attachment=False,
+            as_attachment=is_download,
             download_name=safe_name,
         )
 
@@ -477,7 +494,14 @@ def api_tab_file():
                 else:
                     ext = ".gp"
 
-            filename = f"{source.clean_filename(details.get('artist', ''))}_{source.clean_filename(details.get('title', ''))}{ext}"
+            artist_clean = source.clean_filename(details.get('artist', ''))
+            title_clean  = source.clean_filename(details.get('title', ''))
+            if artist_clean and title_clean:
+                base_name = f"{artist_clean}_{title_clean}"
+            else:
+                base_name = artist_clean or title_clean or "partition"
+            filename = f"{base_name}{ext}"
+
             req = urllib.request.Request(
                 source_url,
                 headers={"User-Agent": getattr(source, "USER_AGENT", "GetMyPartition/1.0")}
@@ -488,7 +512,7 @@ def api_tab_file():
         return send_file(
             io.BytesIO(content),
             mimetype="application/octet-stream",
-            as_attachment=False,
+            as_attachment=is_download,
             download_name=filename,
         )
     except Exception as e:

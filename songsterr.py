@@ -22,8 +22,13 @@ SOURCE_LABEL = "Songsterr"
 
 
 def clean_filename(s: str) -> str:
-    """Nettoie une chaîne pour en faire un nom de fichier valide."""
-    return re.sub(r'[\\/*?:"<>|]', "", s).strip().replace(" ", "_")
+    """Nettoie une chaîne pour en faire un nom de fichier valide, en préservant les accents et apostrophes."""
+    if not s:
+        return ""
+    cleaned = re.sub(r'[\r\n\t\x00-\x1f\\/*?:"<>|]', "", str(s)).strip()
+    cleaned = re.sub(r'\s+', '_', cleaned)
+    cleaned = re.sub(r'_+', '_', cleaned)
+    return cleaned
 
 
 def verify_source_url(url: str) -> bool:
