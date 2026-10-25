@@ -1,121 +1,205 @@
-# 🎸 Extracteur de Partitions Guitar Pro (.gp5)
+# 🎸 GetMyPartition — Band Suite
 
-Application autonome (front-end web + back-end API Python) permettant de rechercher et télécharger directement des partitions multi-instruments au format **Guitar Pro (.gp5 / .gp)** pour le groupe de musique.
+Application web moderne (**PWA**), API REST Python et suite d'outils dédiée à la **recherche**, la **visualisation/écoute interactive** et le **téléchargement** de partitions multi-instruments au format **Guitar Pro** (`.gp`, `.gp3`, `.gp4`, `.gp5`, `.gpx`).
 
----
-
-## 🌐 1. Origine des Fichiers GP5 & Fonctionnement Technique
-
-Les fichiers sont extraits directement depuis les serveurs de **Songsterr** (`https://gp.songsterr.com/`).
-
-### Pourquoi et comment ?
-- Les tablatures "Pro" sur Ultimate Guitar sont souvent verrouillées derrière un abonnement payant, mais la communauté des musiciens partage généralement les mêmes fichiers sur Songsterr.
-- Contrairement à Ultimate Guitar, Songsterr dispose d'une API publique qui permet de retrouver le fichier source original :
-  1. **Recherche de morceau** : Interrogation de `https://www.songsterr.com/api/songs?pattern=<artiste>+<titre>` pour récupérer la liste des résultats et leur `songId`.
-  2. **Métadonnées** : Récupération du `revisionId` le plus récent via `https://www.songsterr.com/api/meta/<songId>`.
-  3. **URL source Guitar Pro** : Appel à `https://www.songsterr.com/api/revision/<revisionId>` qui contient le lien direct vers le fichier binaire `.gp5` ou `.gp`.
-  4. **Téléchargement** : Récupération du binaire avec les en-têtes HTTP adéquats (`User-Agent` et `Referer: https://www.songsterr.com/`).
+Conçue pour les musiciens et groupes en répétition ou sur scène, elle agrège plusieurs sources de tablatures (bibliothèque personnelle cloud et catalogues en ligne) dans une interface épurée, rapide et responsive.
 
 ---
 
-## 🚀 2. Lancer l'Interface Web (Front + Back)
+## ✨ Fonctionnalités Principales
 
-L'application est développée en **100% Python standard** (**zéro dépendance externe**, aucun `pip install` ou environnement virtuel nécessaire).
+### 🔍 Recherche multi-sources intelligente
+* **Agrégation en parallèle** : Interrogation simultanée de plusieurs fournisseurs (Songsterr, bibliothèque privée MongoDB/Supabase, etc.).
+* **Tolérance aux accents et apostrophes** : Recherche insensible aux accents (`celine` $\leftrightarrow$ `Céline`), apostrophes droites `'` ou typographiques `’`, tirets et espaces.
+* **Filtrage strict Songsterr** : Détection et élimination préalable des tablatures sans fichier binaire Guitar Pro (saisies directement sur l'éditeur web ou générées sans import).
+* **Historique et suggestions** : Mémorisation asynchrone des recherches fréquentes dans MongoDB (`LastSearch`) et tags de suggestion cliquables.
 
-### Démarrage du serveur :
+### 🎼 Lecteur et visualiseur interactif (alphaTab)
+* **Rendu HTML5 Canvas 2D accéléré** : Affichage fluide de la notation musicale et tablature, avec défilement automatique optimisé.
+* **Synthétiseur audio intégré** : Lecture sonore multi-pistes réaliste via banque de sons SoundFont (`sonivox.sf2`).
+* **Mixage et sélection des instruments** : Sélection de n'importe quelle piste (Guitare Solo, Rythmique, Basse, Batterie, Chant, Claviers...).
+* **Outils d'entraînement** : Réglage précis de la vitesse de lecture (0.5x à 1.5x), métronome intégré, lecture en boucle (looping), barre de progression cliquable.
+* **Options d'affichage** : Profil standard (portée + tablature), tablature seule, ou portée classique seule.
+* **Mode Scène & Répétition** :
+  * Thème clair / sombre instantané.
+  * Mode plein écran.
+  * **Screen Wake Lock API** : Empêche automatiquement la mise en veille de l'écran sur smartphone ou tablette pendant l'utilisation du player.
+* **Téléchargement direct** : Sauvegarde immédiate de la partition ouverte avec son vrai nom d'origine et son extension native exacte (`.gp`, `.gp3`, `.gp4`, `.gp5`, `.gpx`).
+
+### 💾 Gestion locale des téléchargements
+* Consultation des fichiers téléchargés dans le dossier local `download/`.
+* Informations complètes : format, taille en Ko/Mo, date de modification.
+* Boutons d'écoute directe ou de retéléchargement en un clic.
+
+### 📱 Progressive Web App (PWA)
+* Application installable sur Android, iOS, Windows, macOS et Linux via le navigateur.
+* Service Worker (`sw.js`), icônes dédiées et `manifest.json`.
+
+---
+
+## 🏗️ Architecture & Sources
+
+L'application repose sur une architecture modulaire où chaque source implémente une interface Python uniforme :
+* `search_songs(query: str) -> list[dict]`
+* `get_song_gp_source(song_id) -> dict`
+* `download_gp_file(source_url, output_path) -> Path`
+
+```
+┌────────────────────────────────────────────────────────┐
+│               Interface Web PWA (HTML5 / JS)            │
+│            Lecteur audio & tablature alphaTab          │
+└───────────────────────────▲────────────────────────────┘
+                            │ API REST (/api/*)
+┌───────────────────────────┴────────────────────────────┐
+│               Serveur WSGI Flask (app.py)              │
+│       ThreadPoolExecutor & Encodage RFC 5987 UTF-8     │
+└─────────────▲────────────────────────────▲─────────────┘
+              │                            │
+   ┌──────────┴──────────┐      ┌──────────┴──────────┐
+   │    songsterr.py     │      │   myguitarpro.py    │
+   │   (Catalogue Web)   │      │ (Bibliothèque Privée│
+   └──────────▲──────────┘      └──────────▲──────────┘
+              │                            │
+      Songsterr REST API          MongoDB Atlas + Supabase
+     Validation Revisions               Storage (S3)
+```
+
+1. **`songsterr.py`** : Recherche sur Songsterr avec validation de révision. Si la dernière version n'a pas de fichier binaire, le script explore l'historique pour récupérer la dernière révision Guitar Pro valide. Un cache mémoire thread-safe assure l'ouverture instantanée des partitions validées.
+2. **`myguitarpro.py`** : Recherche plein texte avec regex floue sur MongoDB Atlas (métadonnées, pistes, artistes, titres, noms de fichiers) et téléchargement des binaires depuis le bucket privé Supabase Storage via URLs signées temporaires.
+
+---
+
+## 🛠️ Installation & Lancement Local
+
+### Prérequis
+* Python 3.11 ou 3.12
+* Accès internet pour les dépendances et les services cloud (MongoDB Atlas / Supabase)
+
+### 1. Cloner le projet et configurer l'environnement virtuel
 ```bash
-python3 app.py
-```
-*(Optionnel : vous pouvez spécifier un autre port, par exemple `python3 app.py 9000`)*
+git clone https://github.com/votre-compte/getMyPartition.git
+cd getMyPartition
 
-### Accès à l'application :
-Ouvrez votre navigateur web sur :  
-👉 **[http://localhost:8080](http://localhost:8080)**
-
----
-
-## ✨ 3. Fonctionnalités de l'Interface Web
-
-- 🔍 **Recherche par Artiste et Titre** : Formulaire avec suggestions rapides (ex: *Izïa*, *Muse*, *Nirvana*, *RHCP*).
-- 🏷️ **Badges d'instruments** : Visualisation instantanée des pistes présentes dans la partition (🎸 Guitare, 🎸 Basse, 🥁 Batterie, 🎤 Chant, 🎹 Clavier).
-- ⬇️ **Téléchargement en un clic** :
-  - Sauvegarde immédiate dans votre dossier local `partitions/`.
-  - Déclenchement automatique du téléchargement dans votre navigateur web.
-- 📁 **Gestionnaire de partitions locales** : Liste toutes les partitions `.gp5` déjà présentes dans le dossier avec leur taille, date d'ajout et bouton de retéléchargement rapide.
-- 🎧 **Lien vers le lecteur Songsterr** : Bouton pour ouvrir le lecteur interactif en ligne si vous souhaitez pré-écouter le morceau.
-
----
-
-## 🔌 4. Endpoints de l'API REST (Backend Python)
-
-Le serveur `app.py` communique avec l'interface web via des appels API asynchrones (`fetch`) :
-
-| Méthode | Endpoint | Paramètres | Description |
-| :--- | :--- | :--- | :--- |
-| `GET` | `/api/search` | `?artist=...&title=...` ou `?q=...` | Recherche des morceaux correspondants |
-| `GET` | `/api/song` | `?id=<songId>` | Récupère les métadonnées et pistes d'un morceau |
-| `POST` | `/api/download` | Body JSON : `{"id": <songId>}` | Télécharge et enregistre la partition sur le disque local |
-| `GET` | `/api/local-files` | *(aucun)* | Liste les fichiers `.gp5` / `.gp` présents dans le dossier |
-| `GET` | `/api/local-download` | `?file=<nom_du_fichier>` | Permet de retélécharger un fichier local |
-
----
-
-## 💻 5. Utilisation en Ligne de Commande (CLI)
-
-Si vous préférez télécharger une partition directement sans ouvrir le navigateur :
-
-```bash
-python3 extract_partition.py "<Artiste>" "<Titre>" [dossier_destination]
-```
-
-### Exemple :
-```bash
-python3 extract_partition.py "Izia" "Let Me Alone"
-```
-
-Le fichier sera automatiquement téléchargé sous le nom `IZIA_Let_Me_Alone.gp5`.
-
----
-
-## 🐳 6. Déploiement sur Render (onrender.com) avec Gunicorn
-
-Le projet est packagé pour la production avec **Gunicorn** (serveur WSGI multi-workers et multi-threads) :
-- `gunicorn --bind 0.0.0.0:${PORT} --workers 2 --threads 4 --timeout 60 app:app`
-
-### Étapes de déploiement :
-1. Poussez ce dossier sur un dépôt Git (**GitHub** ou **GitLab**).
-2. Rendez-vous sur votre dashboard **[Render](https://dashboard.render.com/)**.
-3. Cliquez sur **New +** ➔ **Web Service**.
-4. Sélectionnez votre dépôt Git.
-5. Render détectera automatiquement le **Dockerfile** :
-   - **Environment** : `Docker`
-   - **Plan** : `Free`
-   - Le port `$PORT` (10000 par défaut sur Render) est pris en charge automatiquement.
-6. Cliquez sur **Deploy Web Service** ! En 1 à 2 minutes, votre application sera accessible en ligne (ex: `https://votre-app.onrender.com`).
-
----
-
-## 📂 7. Structure des Fichiers
-
-```text
-ThursdayMadness/partitions/
-├── Dockerfile              # Image Docker avec Gunicorn multi-workers
-├── requirements.txt        # Dépendances de production (Flask, Gunicorn)
-├── .dockerignore           # Exclusions pour un build Docker propre et léger
-├── render.yaml             # Blueprint de configuration pour Render
-├── app.py                  # Application WSGI Flask (compatible Gunicorn & local)
-├── index.html              # Interface utilisateur web moderne et responsive
-├── extract_partition.py    # Script CLI & module d'extraction Songsterr
-├── README.md               # Cette documentation
-└── IZIA_Let_Me_Alone.gp5   # Fichier Guitar Pro extrait (43 Ko)
-```
-
----
-## initialisation de l'environnement virtuel python : 
-```
-rm -rf .venv
 python3 -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip
 pip install -r requirements.txt
 ```
+
+### 2. Configuration des variables d'environnement
+Créez un fichier `.env` ou `production.env` à la racine :
+
+```ini
+# Port du serveur Flask en local
+PORT=8080
+
+# Keep-Alive (secondes entre chaque ping de réveil cloud)
+KEEP_ALIVE_CHECK=600
+
+# Supabase Storage (Privé)
+SUPABASE_URL=https://votre-projet.supabase.co
+SUPABASE_KEY=votre_cle_api_service_role
+SUPABASE_BUCKET=GetMyPartitionStorage
+
+# MongoDB Atlas
+MONGO_URI=mongodb+srv://utilisateur:motdepasse@cluster.mongodb.net/?appName=votre-app
+MONGO_DBNAME=GetMyPartition
+MONGO_COLLECTION_GPTAB_NAME=GuitarProTab
+MONGO_COLLECTION_SEARCH_NAME=LastSearch
+```
+
+### 3. Démarrer le serveur
+```bash
+python3 app.py
+```
+L'application est disponible sur : **[http://localhost:8080](http://localhost:8080)**
+
+---
+
+## 📡 Endpoints de l'API REST
+
+| Méthode | Endpoint | Paramètres | Description |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/` | — | Interface web PWA principale (`index.html`). |
+| `GET` | `/api/search` | `q=...` ou `artist=...&title=...` | Recherche en parallèle sur toutes les sources actives (Songsterr, bibliothèque...). |
+| `GET` | `/api/recent-searches`| — | Retourne les 20 dernières recherches enregistrées dans MongoDB. |
+| `GET` | `/api/song` | `id=...&source=...` | Métadonnées détaillées, liste des instruments et URL de la partition. |
+| `GET` | `/api/check` | `id=...&source=...` | Vérifie la disponibilité d'une partition Guitar Pro sans la télécharger. |
+| `POST` | `/api/download` | JSON : `{"id": "...", "source": "..."}` | Télécharge le fichier dans `download/` et renvoie ses informations. |
+| `GET` | `/api/download` | `id=...&source=...&direct=1` | Télécharge et renvoie le flux binaire directement en pièce jointe. |
+| `GET` | `/api/tab-file` | `id=...&source=...[&download=1]` | Sert le binaire (flux `inline` pour alphaTab ou `attachment` pour enregistrement). |
+| `GET` | `/api/local-files` | — | Liste des fichiers Guitar Pro présents dans le dossier `download/`. |
+| `GET` | `/api/local-download` | `file=...` | Télécharge un fichier présent localement dans `download/`. |
+| `GET` | `/api/healthcheck` | — | Endpoint de monitoring pour `cron-job.org` ou Uptime Kuma (renvoie `200 OK`). |
+
+---
+
+## 📦 Scripts d'Administration & d'Ingestion
+
+### Ingestion massive locale vers le Cloud : `_import_gptab.py`
+Scanne récursivement un répertoire local contenant des partitions (`.gp`, `.gp3`, `.gp4`, `.gp5`, `.gpx`), analyse les pistes avec `pyguitarpro` (support multi-encodage CP1252 / UTF-8 / Latin-1), normalise les clés ASCII pour Supabase Storage (normalisation NFKD anti-`InvalidKey`), et synchronise les métadonnées sur MongoDB Atlas avec gestion anti-doublon.
+
+```bash
+python3 _import_gptab.py
+```
+
+### Migration et indexation des pistes : `_tag_gptab.py`
+Parcourt tous les documents déjà stockés dans MongoDB, télécharge le fichier depuis Supabase, extrait l'intégralité des pistes instrumentales et met à jour le tableau `metadata.tracks`.
+
+```bash
+python3 _tag_gptab.py
+```
+
+---
+
+## 🐳 Déploiement en Production (Docker & Render)
+
+Le projet est livré avec un [Dockerfile](file:///media/florent/Data/workspaces/WK_VS_Code/getMyPartition/Dockerfile) sécurisé basé sur **Python 3.12-slim** et servi par le serveur WSGI **Gunicorn** (multi-workers et multi-threads).
+
+### Déploiement sur Render (Web Service)
+1. Poussez votre code sur votre dépôt GitHub / GitLab.
+2. Sur **[Render Dashboard](https://dashboard.render.com/)**, créez un **New Web Service** connecté à votre dépôt.
+3. Render détecte automatiquement l'environnement `Docker`.
+4. Dans l'onglet **Environment**, ajoutez vos variables sécurisées :
+   * `SUPABASE_URL`
+   * `SUPABASE_KEY`
+   * `SUPABASE_BUCKET`
+   * `MONGO_URI`
+   * `MONGO_DBNAME`
+   * `MONGO_COLLECTION_GPTAB_NAME`
+   * `MONGO_COLLECTION_SEARCH_NAME`
+   * `KEEP_ALIVE_CHECK` (optionnel, ex: `600`)
+5. Déployez !
+
+### Prévention de la mise en veille sur plan gratuit (Keep-Alive)
+Sur les offres gratuites (type Render Free), le conteneur s'endort après 15 minutes d'inactivité. Deux mécanismes conjoints sont en place :
+1. **Thread interne `background_keep_alive`** : Ping périodique de MongoDB et Supabase pour maintenir les pools de connexion chauds.
+2. **Ping externe gratuit** : Configurez une requête HTTP `GET` toutes les 10 minutes sur `https://votre-app.onrender.com/api/healthcheck` via **[cron-job.org](https://cron-job.org/)**.
+
+---
+
+## 📁 Structure du Projet
+
+```text
+getMyPartition/
+├── app.py                  # API REST Flask & serveur WSGI (Keep-alive, routes)
+├── songsterr.py            # Connecteur Songsterr (recherche, validation, cache)
+├── myguitarpro.py          # Connecteur bibliothèque (MongoDB Atlas + Supabase)
+├── index.html              # Interface PWA complète & intégration lecteur alphaTab
+├── sw.js                   # Service Worker pour l'installation PWA
+├── manifest.json           # Manifeste d'application PWA (icônes, thème, nom)
+├── icon-192.png            # Icône PWA 192x192
+├── icon-512.png            # Icône PWA 512x512
+├── _import_gptab.py        # Script d'ingestion massive locale -> Supabase + Mongo
+├── _tag_gptab.py           # Script de rétro-tagging des pistes audio
+├── download/               # Dossier de stockage des partitions téléchargées
+├── requirements.txt        # Dépendances Python de production
+├── Dockerfile              # Conteneur de production sécurisé non-root
+├── render.yaml             # Blueprint de déploiement Render
+└── README.md               # Documentation du projet
+```
+
+---
+
+## 📄 Licence
+Ce projet est sous licence [MIT](file:///media/florent/Data/workspaces/WK_VS_Code/getMyPartition/LICENSE).
