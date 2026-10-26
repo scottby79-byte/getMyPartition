@@ -49,6 +49,12 @@
             padding: 0;
         }
 
+        /* Empêche tout débordement horizontal global sur mobile */
+        html, body {
+            overflow-x: hidden;
+            max-width: 100%;
+        }
+
         body {
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
             background-color: var(--bg-primary);
@@ -61,6 +67,8 @@
         .container {
             max-width: 1050px;
             margin: 0 auto;
+            /* Évite que le container dépasse sur mobile */
+            width: 100%;
         }
 
         /* HEADER */
@@ -158,6 +166,12 @@
             overflow: hidden;
         }
 
+        @media (max-width: 480px) {
+            .search-panel {
+                padding: 16px;
+            }
+        }
+
         .search-panel::before {
             content: '';
             position: absolute;
@@ -178,6 +192,11 @@
         @media (max-width: 768px) {
             .search-form {
                 grid-template-columns: 1fr;
+            }
+            /* Sur mobile, le bouton de recherche prend toute la largeur disponible */
+            .btn-search {
+                width: 100%;
+                min-width: unset;
             }
         }
 
@@ -401,6 +420,8 @@
             align-items: center;
             gap: 10px;
             flex-shrink: 0;
+            /* Autorise le retour à la ligne si les boutons ne tiennent pas */
+            flex-wrap: wrap;
         }
 
         @media (max-width: 640px) {
@@ -558,6 +579,8 @@
             display: flex;
             flex-direction: column;
             gap: 10px;
+            /* Empêche le toast de dépasser la largeur de l'écran */
+            max-width: calc(100vw - 32px);
         }
 
         .toast {
@@ -570,7 +593,22 @@
             align-items: center;
             gap: 12px;
             min-width: 300px;
+            max-width: 100%;
             animation: slideIn 0.3s ease;
+        }
+
+        /* Sur mobile : le toast occupe toute la largeur disponible */
+        @media (max-width: 480px) {
+            .toast-container {
+                bottom: 12px;
+                right: 12px;
+                left: 12px;
+                max-width: none;
+            }
+            .toast {
+                min-width: unset;
+                width: 100%;
+            }
         }
 
         .toast.success {
@@ -595,9 +633,11 @@
         .source-group-header {
             display: flex;
             align-items: center;
+            flex-wrap: wrap;
             gap: 10px;
             padding: 10px 4px 6px;
             margin-top: 8px;
+            min-width: 0;
         }
 
         .source-badge {
@@ -672,12 +712,28 @@
             border-radius: var(--radius-lg);
             width: 100%;
             max-width: 1350px;
+            /* dvh (dynamic viewport height) prend en compte la barre du navigateur mobile */
             height: 92vh;
+            height: 92dvh;
             display: flex;
             flex-direction: column;
             overflow: hidden;
             box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
             animation: modalAppear 0.25s ease-out;
+        }
+
+        /* Sur mobile : le player occupe tout l'écran (pas de marge/padding autour) */
+        @media (max-width: 640px) {
+            .player-modal-backdrop {
+                padding: 0;
+            }
+            .player-dialog {
+                height: 100dvh;
+                height: 100vh; /* fallback navigateurs sans dvh */
+                height: 100dvh;
+                border-radius: 0;
+                max-width: 100%;
+            }
         }
 
         @keyframes modalAppear {
@@ -701,6 +757,9 @@
             border-bottom: 1px solid var(--border-color);
             gap: 16px;
             flex-shrink: 0;
+            /* Empêche le header de déborder en largeur */
+            min-width: 0;
+            overflow: hidden;
         }
 
         .player-track-info {
@@ -708,6 +767,9 @@
             align-items: center;
             gap: 12px;
             min-width: 0;
+            /* Permet à ellipsis de fonctionner sur les enfants */
+            flex: 1;
+            overflow: hidden;
         }
 
         .player-title {
@@ -733,6 +795,21 @@
             align-items: center;
             gap: 10px;
             flex-shrink: 0;
+        }
+
+        /* Sur mobile : réduction du padding et masquage du texte du bouton thème */
+        @media (max-width: 640px) {
+            .player-header {
+                padding: 10px 12px;
+                gap: 8px;
+            }
+            .player-header-actions {
+                gap: 6px;
+            }
+            /* Cacher le texte "Thème Sombre" sur mobile, garder uniquement l'emoji */
+            #playerThemeText {
+                display: none;
+            }
         }
 
         .player-icon-btn {
@@ -782,6 +859,7 @@
             display: flex;
             align-items: center;
             gap: 10px;
+            flex-wrap: wrap;
         }
 
         .btn-play-main {
@@ -838,6 +916,7 @@
 
         .player-timeline-wrapper {
             flex: 1;
+            /* Réduit sur mobile via media query */
             min-width: 220px;
             display: flex;
             align-items: center;
@@ -892,6 +971,41 @@
 
         .player-select:focus {
             border-color: var(--accent);
+        }
+
+        /* Sur mobile : toolbar en colonne, selects pleine largeur */
+        @media (max-width: 640px) {
+            .player-toolbar {
+                padding: 8px 12px;
+                gap: 8px;
+            }
+            .player-controls-left {
+                gap: 6px;
+            }
+            .player-timeline-wrapper {
+                min-width: 0;
+                width: 100%;
+                order: 10; /* passe en dernier sur mobile */
+            }
+            .player-controls-right {
+                gap: 6px;
+                width: 100%;
+            }
+            .player-select {
+                flex: 1;
+                min-width: 70px;
+                max-width: none;
+                font-size: 0.78rem;
+                padding: 6px 8px;
+            }
+            .player-time-text {
+                min-width: 70px;
+                font-size: 0.75rem;
+            }
+            /* Masquer les libellés texte des boutons toolbar sur mobile */
+            .btn-player-action span:not(:first-child) {
+                display: none;
+            }
         }
 
         /* ZONE DE RENDU DE LA PARTITION */
