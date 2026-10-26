@@ -142,6 +142,25 @@ def index():
     return send_from_directory(str(BASE_DIR), "index.html")
 
 
+@app.route("/sw.js")
+def service_worker():
+    """Sert le Service Worker avec les en-têtes PWA appropriés."""
+    response = send_from_directory(str(BASE_DIR), "sw.js")
+    response.headers["Content-Type"] = "application/javascript"
+    response.headers["Service-Worker-Allowed"] = "/"
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    return response
+
+
+@app.route("/manifest.json")
+def web_manifest():
+    """Sert le manifeste PWA avec le Content-Type officiel."""
+    response = send_from_directory(str(BASE_DIR), "manifest.json")
+    response.headers["Content-Type"] = "application/manifest+json"
+    response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 def record_search(artist: str, title: str, search_term: str):
     """
     Enregistre la recherche effectuée dans la collection LastSearch de MongoDB.
