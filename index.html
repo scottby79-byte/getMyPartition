@@ -1789,32 +1789,6 @@
         const playerFullscreenBtn = document.getElementById('playerFullscreenBtn');
         const playerViewport     = document.getElementById('playerViewport');
 
-        // Fonction utilitaire pour demander le maintien de l'écran éveillé
-        async function requestWakeLock() {
-            if ('wakeLock' in navigator) {
-                try {
-                    wakeLock = await navigator.wakeLock.request('screen');
-                    wakeLock.addEventListener('release', () => {
-                        wakeLock = null;
-                    });
-                } catch (err) {
-                    console.warn(`Erreur Wake Lock : ${err.name}, ${err.message}`);
-                }
-            }
-        }
-
-        // Fonction utilitaire pour libérer le maintien d'écran
-        async function releaseWakeLock() {
-            if (wakeLock !== null) {
-                try {
-                    await wakeLock.release();
-                    wakeLock = null;
-                } catch (err) {
-                    console.warn(`Erreur Release Wake Lock : ${err.name}, ${err.message}`);
-                }
-            }
-        }
-
         function formatPlayerTime(ms) {
             if (!ms || isNaN(ms) || ms < 0) return '0:00';
             const totalSeconds = Math.floor(ms / 1000);
@@ -1855,6 +1829,39 @@
             a.click();
             document.body.removeChild(a);
         }
+
+        // Fonction utilitaire pour demander le maintien de l'écran éveillé
+        async function requestWakeLock() {
+            if ('wakeLock' in navigator) {
+                try {
+                    wakeLock = await navigator.wakeLock.request('screen');
+                    wakeLock.addEventListener('release', () => {
+                        wakeLock = null;
+                    });
+                } catch (err) {
+                    console.warn(`Erreur Wake Lock : ${err.name}, ${err.message}`);
+                }
+            }
+        }
+
+        // Fonction utilitaire pour libérer le maintien d'écran
+        async function releaseWakeLock() {
+            if (wakeLock !== null) {
+                try {
+                    await wakeLock.release();
+                    wakeLock = null;
+                } catch (err) {
+                    console.warn(`Erreur Release Wake Lock : ${err.name}, ${err.message}`);
+                }
+            }
+        }
+
+        // 🔑 Écouteur global placé en dehors (gère le retour au premier plan sur mobile/PWA)
+        document.addEventListener('visibilitychange', async () => {
+            if (wakeLock === null && document.visibilityState === 'visible' && playerModal.classList.contains('active')) {
+                await requestWakeLock();
+            }
+        });
 
         function openPlayer(songId, source, title, artist) {
             // Mémorisation pour le téléchargement
