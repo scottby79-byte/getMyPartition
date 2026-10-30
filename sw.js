@@ -1,4 +1,4 @@
-const CACHE_NAME = 'getmypartition-v1';
+const CACHE_NAME = 'getmypartition-v2';
 const STATIC_ASSETS = [
   '/',
   '/manifest.json',
@@ -16,7 +16,7 @@ self.addEventListener('install', (event) => {
   self.skipWaiting();
 });
 
-// Activation : nettoyage des anciens caches et prise de contrôle immédiate
+// Activation : nettoyage des anciens caches
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) => {
@@ -31,42 +31,29 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// Interception des requêtes
+// Interception des requêtes (Version sécurisée iOS / Safari)
 self.addEventListener('fetch', (event) => {
-  // Ignorer les requêtes non-GET et les protocoles exotiques (ex: chrome-extension)
-  if (event.request.method !== 'GET' || !event.request.url.startsWith('http')) {
+  const url = new URL(event.request.url);
+
+  // 1. Ignorer tout ce qui n'est pas GET ou hors domaine
+  if (event.request.method !== 'GET' || !url.protocol.startsWith('http')) {
     return;
   }
 
-  // Les appels d'API dynamiques (/api/*) passent toujours directement par le réseau
-  if (event.request.url.includes('/api/')) {
-    event.respondWith(fetch(event.request));
+  // 2. Laisser passer TOUTES les routes API Flask (/api/*) directement par le réseau
+  if (url.pathname.startsWith('/api/')) {
     return;
   }
 
-  // Stratégie Network-First avec fallback Cache pour l'interface et les assets
+  // 3. Pour le reste (fichiers statiques, alphaTab, etc.), on privilégie le réseau 
+  // SANS cache dynamique intrusif pour ne pas bloquer Safari sur iOS.
   event.respondWith(
-    fetch(event.request)
-      .then((networkResponse) => {
-        if (networkResponse && networkResponse.status === 200) {
-          const responseToCache = networkResponse.clone();
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, responseToCache);
-          });
-        }
-        return networkResponse;
-      })
-      .catch(() => {
-        // En cas d'échec réseau ou mode hors-ligne, chercher dans le cache
-        return caches.match(event.request).then((cachedResponse) => {
-          if (cachedResponse) {
-            return cachedResponse;
-          }
-          // Pour la navigation, renvoyer la page racine en cache
-          if (event.request.mode === 'navigate') {
-            return caches.match('/');
-          }
-        });
-      })
+    fetch(event.request).catch(() => {
+      // En cas de panne réseau totale, on tente le cache sur la page principale
+      if (event.request.mode === 'navigate') {
+        return caches.match('/');
+      }
+      return caches.match(event.request);
+    })
   );
 });
