@@ -1813,21 +1813,29 @@
         }
 
         function downloadCurrentTab() {
-            if (!currentSongId || !currentSource) {
-                showToast("Aucun fichier à télécharger.", "error");
-                return;
-            }
+            if (!currentSongId || !currentSource) return;
 
-            // Téléchargement direct avec conservation du nom original, des accents et de la bonne extension
             const downloadUrl = currentSource === 'local'
-                ? `/api/local-download?file=${encodeURIComponent(currentSongId)}`
-                : `/api/tab-file?source=${encodeURIComponent(currentSource)}&id=${encodeURIComponent(currentSongId)}&download=1`;
+                ? `/api/tab-file?source=local&file=${encodeURIComponent(currentSongId)}`
+                : `/api/tab-file?source=${encodeURIComponent(currentSource)}&id=${encodeURIComponent(currentSongId)}`;
 
-            const a = document.createElement('a');
-            a.href = downloadUrl;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
+            // Détection iOS robuste (iPhone, iPad, iPod ET iPadOS récents sur Mac)
+            const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || 
+                        (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+            if (isIOS) {
+                // Sur iOS / iPadOS, on ouvre l'URL directement (Safari gère le fichier/partage)
+                window.open(downloadUrl, '_blank');
+            } else {
+                // Méthode classique pour PC / Android (Chrome, Firefox, Brave)
+                const a = document.createElement('a');
+                a.href = downloadUrl;
+                const safeTitle = currentSongTitle.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+                a.download = `${safeTitle}.gp5`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+            }
         }
 
         // Fonction utilitaire pour demander le maintien de l'écran éveillé
