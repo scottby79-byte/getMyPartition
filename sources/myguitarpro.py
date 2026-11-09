@@ -153,7 +153,7 @@ def search_songs(query: str) -> list[dict]:
     cursor = _mongo_collection.find(
         mongo_filter,
         {"storage_path": 1, "filename": 1, "metadata": 1}
-    ).limit(50)
+    ).limit(15)
 
     results = []
     for doc in cursor:

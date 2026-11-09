@@ -1,4 +1,7 @@
 __pycache__/
+sources/__pycache__/
+tools/__pycache__/
+tests/__pycache__/
 .venv/
 exec-app.sh
 download/

@@ -1,6 +1,6 @@
-Flask>=3.0.0
-gunicorn>=21.2.0
+Flask>=3.1.0,<4.0.0
+gunicorn>=21.2.0,<28.0.0
 pyguitarpro==0.11
 supabase==2.12.0
 pymongo==4.11.0
-python-dotenv
+python-dotenv>=1.0.0,<2.0.0

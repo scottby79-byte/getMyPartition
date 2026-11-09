@@ -10,8 +10,8 @@ Conçue pour les musiciens et groupes en répétition ou sur scène, elle agrèg
 
 ### 🔍 Recherche multi-sources intelligente
 * **Agrégation en parallèle** : Interrogation simultanée de plusieurs fournisseurs (Songsterr, bibliothèque privée MongoDB/Supabase, etc.).
-* **Tolérance aux accents et apostrophes** : Recherche insensible aux accents (`celine` $\leftrightarrow$ `Céline`), apostrophes droites `'` ou typographiques `’`, tirets et espaces.
-* **Filtrage strict Songsterr** : Détection et élimination préalable des tablatures sans fichier binaire Guitar Pro (saisies directement sur l'éditeur web ou générées sans import).
+* **Tolérance aux accents et apostrophes** : Recherche insensible aux accents (`celine` $\leftrightarrow$ `Céline`), apostrophes droites `'` ou typographiques `'`, tirets et espaces.
+* **Filtrage strict Songsterr** : Détection et élimination préalable des tablatures sans fichier binaire Guitar Pro.
 * **Historique et suggestions** : Mémorisation asynchrone des recherches fréquentes dans MongoDB (`LastSearch`) et tags de suggestion cliquables.
 
 ### 🎼 Lecteur et visualiseur interactif (alphaTab)
@@ -23,8 +23,9 @@ Conçue pour les musiciens et groupes en répétition ou sur scène, elle agrèg
 * **Mode Scène & Répétition** :
   * Thème clair / sombre instantané.
   * Mode plein écran.
-  * **Screen Wake Lock API** : Empêche automatiquement la mise en veille de l'écran sur smartphone ou tablette pendant l'utilisation du player.
-* **Téléchargement direct** : Sauvegarde immédiate de la partition ouverte avec son vrai nom d'origine et son extension native exacte (`.gp`, `.gp3`, `.gp4`, `.gp5`, `.gpx`).
+  * **Screen Wake Lock API** : Empêche automatiquement la mise en veille de l'écran sur smartphone ou tablette.
+* **Téléchargement direct** : Sauvegarde immédiate de la partition ouverte avec son vrai nom d'origine et son extension native exacte.
+* **Impression A4 / Export PDF** : Bouton d'impression et raccourci `Ctrl+P` isolant uniquement la partition et la piste active sur fond blanc, sans contrôles ni éléments d'interface.
 
 ### 💾 Gestion locale des téléchargements
 * Consultation des fichiers téléchargés dans le dossier local `download/`.
@@ -39,33 +40,35 @@ Conçue pour les musiciens et groupes en répétition ou sur scène, elle agrèg
 
 ## 🏗️ Architecture & Sources
 
-L'application repose sur une architecture modulaire où chaque source implémente une interface Python uniforme :
+L'application repose sur une architecture modulaire où chaque source implémente une interface Python uniforme dans le package `sources/` :
 * `search_songs(query: str) -> list[dict]`
 * `get_song_gp_source(song_id) -> dict`
 * `download_gp_file(source_url, output_path) -> Path`
 
 ```
-┌────────────────────────────────────────────────────────┐
-│               Interface Web PWA (HTML5 / JS)            │
-│            Lecteur audio & tablature alphaTab          │
-└───────────────────────────▲────────────────────────────┘
-                            │ API REST (/api/*)
-┌───────────────────────────┴────────────────────────────┐
-│               Serveur WSGI Flask (app.py)              │
-│       ThreadPoolExecutor & Encodage RFC 5987 UTF-8     │
-└─────────────▲────────────────────────────▲─────────────┘
-              │                            │
-   ┌──────────┴──────────┐      ┌──────────┴──────────┐
-   │    songsterr.py     │      │   myguitarpro.py    │
-   │   (Catalogue Web)   │      │ (Bibliothèque Privée│
-   └──────────▲──────────┘      └──────────▲──────────┘
-              │                            │
-      Songsterr REST API          MongoDB Atlas + Supabase
-     Validation Revisions               Storage (S3)
+┌────────────────────────────────────────────────────────────────────────┐
+│                    Interface Web PWA (HTML5 / JS)                      │
+│                 Lecteur audio & tablature alphaTab                     │
+└───────────────────────────────────▲────────────────────────────────────┘
+                                    │ API REST (/api/*)
+┌───────────────────────────────────┴────────────────────────────────────┐
+│                       Serveur WSGI Flask (app.py)                      │
+│               ThreadPoolExecutor & Encodage RFC 5987 UTF-8             │
+└─────────────▲─────────────────────▲─────────────────────▲──────────────┘
+              │                     │                     │
+   ┌──────────┴──────────┐ ┌────────┴────────────┐ ┌──────┴──────────┐
+   │  sources/           │ │  sources/           │ │  sources/       │
+   │  songsterr.py       │ │  myguitarpro.py     │ │  gprotab.py     │
+   │  (Catalogue Web)    │ │  (Bibliothèque Priv)│ │  (Catalogue GP) │
+   └──────────▲──────────┘ └────────▲────────────┘ └──────▲──────────┘
+              │                     │                     │
+     Songsterr REST API    MongoDB Atlas + Supab      GProTab.net
+    Validation Revisions        Storage (S3)          HTML + Binaires
 ```
 
-1. **`songsterr.py`** : Recherche sur Songsterr avec validation de révision. Si la dernière version n'a pas de fichier binaire, le script explore l'historique pour récupérer la dernière révision Guitar Pro valide. Un cache mémoire thread-safe assure l'ouverture instantanée des partitions validées.
-2. **`myguitarpro.py`** : Recherche plein texte avec regex floue sur MongoDB Atlas (métadonnées, pistes, artistes, titres, noms de fichiers) et téléchargement des binaires depuis le bucket privé Supabase Storage via URLs signées temporaires.
+1. **`sources/songsterr.py`** : Recherche sur Songsterr avec validation de révision. Si la dernière version n'a pas de fichier binaire, le script explore l'historique pour récupérer la dernière révision Guitar Pro valide. Un cache mémoire thread-safe assure l'ouverture instantanée des partitions validées.
+2. **`sources/myguitarpro.py`** : Recherche plein texte avec regex floue sur MongoDB Atlas (métadonnées, pistes, artistes, titres, noms de fichiers) et téléchargement des binaires depuis le bucket privé Supabase Storage via URLs signées temporaires.
+3. **`sources/gprotab.py`** : Recherche multi-critères (compositions et artistes) sur le catalogue communautaire GProTab.net (> 70 000 tablatures `.gp`, `.gp3`, `.gp4`, `.gp5`, `.gpx`), extraction automatique des pistes avec `pyguitarpro` et téléchargement direct.
 
 ---
 
@@ -87,7 +90,7 @@ pip install -r requirements.txt
 ```
 
 ### 2. Configuration des variables d'environnement
-Créez un fichier `.env` ou `production.env` à la racine :
+Créez un fichier `.env` à la racine :
 
 ```ini
 # Port du serveur Flask en local
@@ -108,11 +111,20 @@ MONGO_COLLECTION_GPTAB_NAME=GuitarProTab
 MONGO_COLLECTION_SEARCH_NAME=LastSearch
 ```
 
+> **⚠️ Sécurité** : Ne committez jamais votre `.env` ou `production.env`. Ils sont ignorés par `.gitignore`.
+
 ### 3. Démarrer le serveur
 ```bash
 python3 app.py
 ```
 L'application est disponible sur : **[http://localhost:8080](http://localhost:8080)**
+
+### 4. Lancer les tests unitaires (Non-régression & Bouchons API)
+Une suite de 24 tests unitaires couvre l'intégralité des endpoints avec des bouchons pour Songsterr, MongoDB et Supabase :
+```bash
+python3 -m unittest discover -s tests -v
+```
+
 
 ---
 
@@ -121,7 +133,7 @@ L'application est disponible sur : **[http://localhost:8080](http://localhost:80
 | Méthode | Endpoint | Paramètres | Description |
 | :--- | :--- | :--- | :--- |
 | `GET` | `/` | — | Interface web PWA principale (`index.html`). |
-| `GET` | `/api/search` | `q=...` ou `artist=...&title=...` | Recherche en parallèle sur toutes les sources actives (Songsterr, bibliothèque...). |
+| `GET` | `/api/search` | `q=...` ou `artist=...&title=...` | Recherche en parallèle sur toutes les sources actives. |
 | `GET` | `/api/recent-searches`| — | Retourne les 20 dernières recherches enregistrées dans MongoDB. |
 | `GET` | `/api/song` | `id=...&source=...` | Métadonnées détaillées, liste des instruments et URL de la partition. |
 | `GET` | `/api/check` | `id=...&source=...` | Vérifie la disponibilité d'une partition Guitar Pro sans la télécharger. |
@@ -134,27 +146,36 @@ L'application est disponible sur : **[http://localhost:8080](http://localhost:80
 
 ---
 
-## 📦 Scripts d'Administration & d'Ingestion
+## 📦 Scripts d'Administration & d'Ingestion (`tools/`)
 
-### Ingestion massive locale vers le Cloud : `_import_gptab.py`
-Scanne récursivement un répertoire local contenant des partitions (`.gp`, `.gp3`, `.gp4`, `.gp5`, `.gpx`), analyse les pistes avec `pyguitarpro` (support multi-encodage CP1252 / UTF-8 / Latin-1), normalise les clés ASCII pour Supabase Storage (normalisation NFKD anti-`InvalidKey`), et synchronise les métadonnées sur MongoDB Atlas avec gestion anti-doublon.
+Les scripts d'administration sont regroupés dans le dossier `tools/` et s'exécutent **depuis la racine du projet** (le `.env` est résolu automatiquement). Ils ne sont **pas** inclus dans l'image Docker de production.
+
+### Ingestion massive locale vers le Cloud : `tools/_import_gptab.py`
+Scanne récursivement un répertoire local contenant des partitions (`.gp`, `.gp3`, `.gp4`, `.gp5`, `.gpx`), analyse les pistes avec `pyguitarpro` (support multi-encodage CP1252 / UTF-8 / Latin-1), normalise les clés ASCII pour Supabase Storage (normalisation NFKD), et synchronise les métadonnées sur MongoDB Atlas avec gestion anti-doublon.
 
 ```bash
-python3 _import_gptab.py
+python3 tools/_import_gptab.py
 ```
 
-### Migration et indexation des pistes : `_tag_gptab.py`
+### Migration et indexation des pistes : `tools/_tag_gptab.py`
 Parcourt tous les documents déjà stockés dans MongoDB, télécharge le fichier depuis Supabase, extrait l'intégralité des pistes instrumentales et met à jour le tableau `metadata.tracks`.
 
 ```bash
-python3 _tag_gptab.py
+python3 tools/_tag_gptab.py
+```
+
+### Test de connexion MongoDB : `tools/_testConn.py`
+Vérifie la connexion à MongoDB Atlas et affiche les bases de données accessibles.
+
+```bash
+python3 tools/_testConn.py
 ```
 
 ---
 
 ## 🐳 Déploiement en Production (Docker & Render)
 
-Le projet est livré avec un [Dockerfile](file:///media/florent/Data/workspaces/WK_VS_Code/getMyPartition/Dockerfile) sécurisé basé sur **Python 3.12-slim** et servi par le serveur WSGI **Gunicorn** (multi-workers et multi-threads).
+Le projet est livré avec un [Dockerfile](Dockerfile) sécurisé basé sur **Python 3.12-slim** et servi par le serveur WSGI **Gunicorn** (multi-workers et multi-threads).
 
 ### Déploiement sur Render (Web Service)
 1. Poussez votre code sur votre dépôt GitHub / GitLab.
@@ -182,24 +203,56 @@ Sur les offres gratuites (type Render Free), le conteneur s'endort après 15 min
 
 ```text
 getMyPartition/
-├── app.py                  # API REST Flask & serveur WSGI (Keep-alive, routes)
-├── songsterr.py            # Connecteur Songsterr (recherche, validation, cache)
-├── myguitarpro.py          # Connecteur bibliothèque (MongoDB Atlas + Supabase)
-├── index.html              # Interface PWA complète & intégration lecteur alphaTab
-├── sw.js                   # Service Worker pour l'installation PWA
-├── manifest.json           # Manifeste d'application PWA (icônes, thème, nom)
-├── icon-192.png            # Icône PWA 192x192
-├── icon-512.png            # Icône PWA 512x512
-├── _import_gptab.py        # Script d'ingestion massive locale -> Supabase + Mongo
-├── _tag_gptab.py           # Script de rétro-tagging des pistes audio
-├── download/               # Dossier de stockage des partitions téléchargées
-├── requirements.txt        # Dépendances Python de production
-├── Dockerfile              # Conteneur de production sécurisé non-root
-├── render.yaml             # Blueprint de déploiement Render
-└── README.md               # Documentation du projet
+├── app.py                    # API REST Flask & serveur WSGI (Keep-alive, routes)
+├── sources/                  # Package Python — connecteurs de sources de partitions
+│   ├── __init__.py           # Documentation de l'interface commune
+│   ├── songsterr.py          # Connecteur Songsterr (recherche, validation, cache)
+│   ├── myguitarpro.py        # Connecteur bibliothèque (MongoDB Atlas + Supabase)
+│   └── gprotab.py            # Connecteur GProTab.net (catalogue communautaire)
+├── images/                   # Icônes PWA
+│   ├── icon-192.png          # Icône PWA 192x192
+│   ├── icon-512.png          # Icône PWA 512x512
+│   ├── ico_192x192.xcf       # Source GIMP 192x192
+│   └── ico_512x512.xcf       # Source GIMP 512x512
+├── tools/                    # Scripts d'administration (non déployés en production)
+│   ├── _import_gptab.py      # Ingestion massive locale -> Supabase + MongoDB
+│   ├── _tag_gptab.py         # Rétro-tagging des pistes audio
+│   └── _testConn.py          # Test de connexion MongoDB
+├── tests/                    # Tests unitaires & bouchons API (mocking)
+│   ├── __init__.py
+│   └── test_api.py           # 27 tests unitaires déterministes et isolés
+├── index.html                # Interface PWA complète & intégration lecteur alphaTab
+├── sw.js                     # Service Worker pour l'installation PWA
+├── manifest.json             # Manifeste d'application PWA (icônes, thème, nom)
+├── download/                 # Dossier de stockage des partitions téléchargées (local)
+├── requirements.txt          # Dépendances Python de production
+├── Dockerfile                # Conteneur de production sécurisé non-root
+├── render.yaml               # Blueprint de déploiement Render
+└── README.md                 # Documentation du projet
 ```
 
 ---
 
+## ➕ Ajouter une nouvelle source
+
+1. Créer `sources/ma_nouvelle_source.py` en respectant l'interface :
+   ```python
+   SOURCE_ID    = "ma-source"       # identifiant unique
+   SOURCE_LABEL = "Ma Source"       # libellé dans l'UI
+
+   def search_songs(query: str) -> list[dict]: ...
+   def get_song_gp_source(song_id) -> dict: ...
+   def download_gp_file(source_url, output_path) -> Path: ...
+   def clean_filename(name: str) -> str: ...
+   ```
+2. Dans `app.py`, importer le module et l'ajouter dans `SOURCES` :
+   ```python
+   from sources import ma_nouvelle_source
+   SOURCES = [songsterr, myguitarpro, ma_nouvelle_source]
+   ```
+3. C'est tout — l'interface et l'API s'adaptent automatiquement.
+
+---
+
 ## 📄 Licence
-Ce projet est sous licence [MIT](file:///media/florent/Data/workspaces/WK_VS_Code/getMyPartition/LICENSE).
+Ce projet est sous licence [MIT](LICENSE).

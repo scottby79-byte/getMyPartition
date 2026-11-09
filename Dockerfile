@@ -25,11 +25,16 @@ RUN groupadd -g 1000 appgroup && \
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copie des fichiers applicatifs (assurez-vous que le nom du module correspond bien à vos fichiers, ex: myguitarpro.py)
-COPY app.py songsterr.py myguitarpro.py index.html sw.js manifest.json icon-192.png icon-512.png ./
+# Copie des fichiers applicatifs
+COPY app.py index.html sw.js manifest.json ./
 
+# Package sources (connecteurs de partitions)
+COPY sources/ ./sources/
 
-# Attribution des droits sur le dossier de travail et les certificats si nécessaire
+# Icônes PWA
+COPY images/icon-192.png images/icon-512.png ./images/
+
+# Attribution des droits sur le dossier de travail
 RUN chown -R appuser:appgroup /app
 
 # Exécution sous l'utilisateur non-root

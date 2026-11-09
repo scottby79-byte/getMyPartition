@@ -14,9 +14,9 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="GetMyPartition">
-    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
-    <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png">
-    <link rel="apple-touch-icon" href="/icon-192.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="/images/icon-192.png">
+    <link rel="icon" type="image/png" sizes="512x512" href="/images/icon-512.png">
+    <link rel="apple-touch-icon" href="/images/icon-192.png">
 
     <!-- Moteur de rendu et lecteur audio Guitar Pro alphaTab -->
     <script src="https://cdn.jsdelivr.net/npm/@coderline/alphatab@1.8.4/dist/alphaTab.js"></script>
@@ -1050,6 +1050,113 @@
             filter: invert(0.9) hue-rotate(180deg);
         }
 
+        /* En-tête exclusif pour l'impression papier / PDF */
+        .print-only-header {
+            display: none;
+        }
+
+        /* ---------------------------------------------------------------------------
+           STYLES APERÇU AVANT IMPRESSION (@media print)
+           Isole uniquement la partition et son en-tête sur fond blanc propre
+           --------------------------------------------------------------------------- */
+        @media print {
+            @page {
+                size: A4 portrait;
+                margin: 12mm 10mm;
+            }
+
+            /* Masquer l'ensemble du site et des éléments parasites */
+            body > *:not(.player-modal),
+            header,
+            .search-section,
+            .container,
+            .pwa-banner,
+            .toast-container,
+            .player-header,
+            .player-toolbar,
+            .player-progress-bar,
+            .player-loading-overlay,
+            .player-error-overlay {
+                display: none !important;
+            }
+
+            body, html {
+                background: #ffffff !important;
+                color: #000000 !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                overflow: visible !important;
+                height: auto !important;
+            }
+
+            .player-modal {
+                position: static !important;
+                display: block !important;
+                background: transparent !important;
+                padding: 0 !important;
+                width: 100% !important;
+                height: auto !important;
+                overflow: visible !important;
+            }
+
+            .player-dialog {
+                box-shadow: none !important;
+                border: none !important;
+                max-width: 100% !important;
+                width: 100% !important;
+                height: auto !important;
+                background: transparent !important;
+                border-radius: 0 !important;
+                overflow: visible !important;
+            }
+
+            .player-body {
+                height: auto !important;
+                overflow: visible !important;
+            }
+
+            .player-tab-viewport {
+                background: #ffffff !important;
+                padding: 0 !important;
+                overflow: visible !important;
+                height: auto !important;
+            }
+
+            /* Annule le thème sombre pour économiser l'encre et assurer un contraste parfait */
+            .player-tab-viewport.dark-theme {
+                background: #ffffff !important;
+            }
+            .player-tab-viewport.dark-theme #alphaTab svg,
+            .player-tab-viewport.dark-theme #alphaTab canvas {
+                filter: none !important;
+            }
+
+            /* En-tête d'impression avec titre, artiste et piste */
+            .print-only-header {
+                display: block !important;
+                margin-bottom: 18px;
+                padding-bottom: 8px;
+                border-bottom: 2px solid #111827;
+            }
+            .print-only-title {
+                font-size: 20pt;
+                font-weight: 700;
+                color: #000000;
+                margin: 0 0 4px 0;
+            }
+            .print-only-subtitle {
+                font-size: 11pt;
+                color: #374151;
+                margin: 0;
+            }
+
+            /* Empêche la coupure d'une portée entre deux pages */
+            #alphaTab .at-surface > div {
+                break-inside: avoid !important;
+                page-break-inside: avoid !important;
+            }
+        }
+
         /* Spinner & état de chargement */
         .player-loading-overlay {
             position: absolute;
@@ -1220,12 +1327,19 @@
                 <div class="player-header-actions">
                     <button class="btn-player-action active" id="playerThemeToggle" title="Basculer le thème de la partition (Clair / Sombre)">
                         <span>🌓</span>
-                        <span id="playerThemeText">TThème Sombre</span>
+                        <span id="playerThemeText">Thème Sombre</span>
                     </button>
                     <button id="playerDownloadBtn" class="player-icon-btn" title="Télécharger la partition" onclick="downloadCurrentTab()">
                         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
                             <path d="M12 16a1 1 0 0 1-.707-.293l-5-5a1 1 0 0 1 1.414-1.414L11 12.586V3a1 1 0 0 1 2 0v9.586l3.293-3.293a1 1 0 0 1 1.414 1.414l-5 5A1 1 0 0 1 12 16z"/>
                             <path d="M20 21H4a1 1 0 0 1 0-2h16a1 1 0 0 1 0 2z"/>
+                        </svg>
+                    </button>
+                    <button id="playerPrintBtn" class="player-icon-btn" title="Imprimer la partition (piste en cours) — Ctrl+P" onclick="printCurrentTab()">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="6 9 6 2 18 2 18 9"></polyline>
+                            <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
+                            <rect x="6" y="14" width="12" height="8"></rect>
                         </svg>
                     </button>
                     <button class="player-icon-btn" id="playerFullscreenBtn" title="Plein écran">
@@ -1326,6 +1440,11 @@
 
                 <!-- CONTENEUR SCROLLABLE ALPHATAB -->
                 <div class="player-tab-viewport dark-theme" id="playerViewport">
+                    <!-- En-tête visible uniquement lors de l'aperçu avant impression -->
+                    <div class="print-only-header" id="printOnlyHeader">
+                        <div class="print-only-title" id="printTitle">Titre de la partition</div>
+                        <div class="print-only-subtitle" id="printSubtitle">Artiste — Piste en cours</div>
+                    </div>
                     <div id="alphaTab"></div>
                 </div>
             </div>
@@ -1522,7 +1641,7 @@
         const SOURCE_META = {
             'songsterr': { label: 'Songsterr',       color: '#f97316', icon: '🌐' },
             'mygppro':   { label: 'Get My Partitions Band Suite', color: '#10b981', icon: '📁' },
-            // Ajouter les futures sources ici
+            'gprotab':   { label: 'GProTab',         color: '#3b82f6', icon: '🎸' },
         };
 
         function getSourceBadgeHtml(sourceId) {
@@ -1838,6 +1957,71 @@
             }
         }
 
+        // Met à jour les informations affichées sur la feuille imprimée
+        function updatePrintHeader(trackName = '') {
+            const printTitle = document.getElementById('printTitle');
+            const printSubtitle = document.getElementById('printSubtitle');
+            if (!printTitle || !printSubtitle) return;
+
+            const currentTitle = playerTitle.textContent || currentSongTitle || 'Partition';
+            const currentArtist = (playerArtist.textContent || '').replace(/^[—\-]\s*/, '') || currentSongArtist || '';
+            const trackText = trackName ? ` • Piste : ${trackName}` : '';
+
+            printTitle.textContent = currentTitle;
+            printSubtitle.textContent = currentArtist ? `${currentArtist}${trackText}` : trackText.replace(/^ • /, '');
+        }
+
+        // Fonction d'impression de la partition et de la piste active
+        function printCurrentTab() {
+            if (!currentAlphaTabApi || !currentScore) {
+                showToast("La partition n'est pas encore prête pour l'impression.", "warning");
+                return;
+            }
+
+            try {
+                // 1. Déterminer et cibler la piste actuellement active
+                const trackIdx = parseInt(playerTrackSelect.value, 10) || 0;
+                let selectedTrack = null;
+                let selectedTrackName = '';
+
+                if (currentScore.tracks && currentScore.tracks[trackIdx]) {
+                    selectedTrack = currentScore.tracks[trackIdx];
+                    selectedTrackName = selectedTrack.name || `Piste ${trackIdx + 1}`;
+                }
+
+                // Mise à jour de l'en-tête textuel pour l'impression papier
+                updatePrintHeader(selectedTrackName);
+
+                // 2. Profil d'affichage (Standard, Tab seule ou Portée seule)
+                let profile = alphaTab.StaveProfile.Default;
+                if (playerStaveSelect && playerStaveSelect.value === 'tab') {
+                    profile = alphaTab.StaveProfile.Tab;
+                } else if (playerStaveSelect && playerStaveSelect.value === 'score') {
+                    profile = alphaTab.StaveProfile.Score;
+                }
+
+                // 3. Forcer le moteur sur la piste sélectionnée
+                if (selectedTrack) {
+                    currentAlphaTabApi.renderTracks([selectedTrack]);
+                }
+
+                // 4. Utilisation de la méthode native d'impression A4 d'alphaTab
+                // Elle calcule une pagination A4 (210mm) sans coupure de portée et ouvre l'aperçu avant impression
+                const printSettings = {
+                    display: {
+                        staveProfile: profile,
+                        scale: 0.85
+                    }
+                };
+
+                currentAlphaTabApi.print('210mm', printSettings);
+            } catch (err) {
+                console.warn("Impression alphaTab native indisponible, bascule sur window.print() :", err);
+                // Repli transparent avec les règles CSS @media print
+                window.print();
+            }
+        }
+
         // Fonction utilitaire pour demander le maintien de l'écran éveillé
         async function requestWakeLock() {
             if ('wakeLock' in navigator) {
@@ -1910,8 +2094,14 @@
                 currentAlphaTabApi = null;
             }
 
-            // Réinitialisation du conteneur alphaTab
-            playerViewport.innerHTML = '<div id="alphaTab"></div>';
+            // Réinitialisation du conteneur alphaTab avec l'en-tête dédié à l'impression
+            playerViewport.innerHTML = `
+                <div class="print-only-header" id="printOnlyHeader">
+                    <div class="print-only-title" id="printTitle">${escapeHtml(title || 'Partition')}</div>
+                    <div class="print-only-subtitle" id="printSubtitle">${escapeHtml(artist || '')}</div>
+                </div>
+                <div id="alphaTab"></div>
+            `;
             const container = document.getElementById('alphaTab');
 
             // URL proxy Flask sécurisée (sans contrainte CORS, compatible bucket privé)
@@ -1967,6 +2157,9 @@
                     }
 
                     playerLoadingText.textContent = 'Génération du rendu et chargement de la SoundFont...';
+                    // Synchronise l'en-tête de la page d'impression avec la première piste active
+                    const firstTrackName = (score.tracks && score.tracks[0]) ? score.tracks[0].name : '';
+                    updatePrintHeader(firstTrackName);
                 });
 
                 // 2. Rendu graphique terminé
@@ -2083,7 +2276,9 @@
             if (currentAlphaTabApi && currentScore) {
                 const trackIdx = parseInt(playerTrackSelect.value, 10);
                 if (currentScore.tracks && currentScore.tracks[trackIdx]) {
-                    currentAlphaTabApi.renderTracks([currentScore.tracks[trackIdx]]);
+                    const track = currentScore.tracks[trackIdx];
+                    currentAlphaTabApi.renderTracks([track]);
+                    updatePrintHeader(track.name || `Piste ${trackIdx + 1}`);
                 }
             }
         };
@@ -2120,12 +2315,16 @@
             }
         };
 
-        // Raccourcis clavier (Espace pour Play/Pause, Échap pour fermer)
+        // Raccourcis clavier (Espace pour Play/Pause, Échap pour fermer, Ctrl+P pour Imprimer)
         window.addEventListener('keydown', (e) => {
             if (!playerModal.classList.contains('active')) return;
 
             if (e.key === 'Escape') {
                 closePlayer();
+            } else if ((e.ctrlKey || e.metaKey) && (e.key === 'p' || e.key === 'P')) {
+                // Raccourci d'impression de la partition en cours
+                e.preventDefault();
+                printCurrentTab();
             } else if (e.code === 'Space' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'SELECT') {
                 e.preventDefault();
                 if (currentAlphaTabApi) {

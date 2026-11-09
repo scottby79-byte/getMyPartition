@@ -8,9 +8,11 @@ from supabase import create_client
 from pymongo import MongoClient
 from dotenv import load_dotenv
 
-load_dotenv()
-if not os.getenv("MONGO_URI") and Path("production.env").exists():
-    load_dotenv("production.env")
+# Résolution de la racine du projet (un niveau au-dessus du dossier tools/)
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+load_dotenv(_PROJECT_ROOT / ".env")
+if not os.getenv("MONGO_URI") and (_PROJECT_ROOT / "production.env").exists():
+    load_dotenv(_PROJECT_ROOT / "production.env")
 
 # --- CONFIGURATION ---
 SUPABASE_URL  = os.getenv("SUPABASE_URL")
