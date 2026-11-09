@@ -46,28 +46,29 @@ L'application repose sur une architecture modulaire où chaque source implément
 * `download_gp_file(source_url, output_path) -> Path`
 
 ```
-┌────────────────────────────────────────────────────────┐
-│               Interface Web PWA (HTML5 / JS)            │
-│            Lecteur audio & tablature alphaTab          │
-└───────────────────────────▲────────────────────────────┘
-                            │ API REST (/api/*)
-┌───────────────────────────┴────────────────────────────┐
-│               Serveur WSGI Flask (app.py)              │
-│       ThreadPoolExecutor & Encodage RFC 5987 UTF-8     │
-└─────────────▲────────────────────────────▲─────────────┘
-              │                            │
-   ┌──────────┴──────────┐      ┌──────────┴────────────┐
-   │  sources/           │      │  sources/             │
-   │  songsterr.py       │      │  myguitarpro.py       │
-   │  (Catalogue Web)    │      │  (Bibliothèque Privée)│
-   └──────────▲──────────┘      └──────────▲────────────┘
-              │                            │
-     Songsterr REST API          MongoDB Atlas + Supabase
-    Validation Revisions               Storage (S3)
+┌────────────────────────────────────────────────────────────────────────┐
+│                    Interface Web PWA (HTML5 / JS)                      │
+│                 Lecteur audio & tablature alphaTab                     │
+└───────────────────────────────────▲────────────────────────────────────┘
+                                    │ API REST (/api/*)
+┌───────────────────────────────────┴────────────────────────────────────┐
+│                       Serveur WSGI Flask (app.py)                      │
+│               ThreadPoolExecutor & Encodage RFC 5987 UTF-8             │
+└─────────────▲─────────────────────▲─────────────────────▲──────────────┘
+              │                     │                     │
+   ┌──────────┴──────────┐ ┌────────┴────────────┐ ┌──────┴──────────┐
+   │  sources/           │ │  sources/           │ │  sources/       │
+   │  songsterr.py       │ │  myguitarpro.py     │ │  gprotab.py     │
+   │  (Catalogue Web)    │ │  (Bibliothèque Priv)│ │  (Catalogue GP) │
+   └──────────▲──────────┘ └────────▲────────────┘ └──────▲──────────┘
+              │                     │                     │
+     Songsterr REST API    MongoDB Atlas + Supab      GProTab.net
+    Validation Revisions        Storage (S3)          HTML + Binaires
 ```
 
 1. **`sources/songsterr.py`** : Recherche sur Songsterr avec validation de révision. Si la dernière version n'a pas de fichier binaire, le script explore l'historique pour récupérer la dernière révision Guitar Pro valide. Un cache mémoire thread-safe assure l'ouverture instantanée des partitions validées.
 2. **`sources/myguitarpro.py`** : Recherche plein texte avec regex floue sur MongoDB Atlas (métadonnées, pistes, artistes, titres, noms de fichiers) et téléchargement des binaires depuis le bucket privé Supabase Storage via URLs signées temporaires.
+3. **`sources/gprotab.py`** : Recherche multi-critères (compositions et artistes) sur le catalogue communautaire GProTab.net (> 70 000 tablatures `.gp`, `.gp3`, `.gp4`, `.gp5`, `.gpx`), extraction automatique des pistes avec `pyguitarpro` et téléchargement direct.
 
 ---
 
@@ -206,7 +207,8 @@ getMyPartition/
 ├── sources/                  # Package Python — connecteurs de sources de partitions
 │   ├── __init__.py           # Documentation de l'interface commune
 │   ├── songsterr.py          # Connecteur Songsterr (recherche, validation, cache)
-│   └── myguitarpro.py        # Connecteur bibliothèque (MongoDB Atlas + Supabase)
+│   ├── myguitarpro.py        # Connecteur bibliothèque (MongoDB Atlas + Supabase)
+│   └── gprotab.py            # Connecteur GProTab.net (catalogue communautaire)
 ├── images/                   # Icônes PWA
 │   ├── icon-192.png          # Icône PWA 192x192
 │   ├── icon-512.png          # Icône PWA 512x512
@@ -218,7 +220,7 @@ getMyPartition/
 │   └── _testConn.py          # Test de connexion MongoDB
 ├── tests/                    # Tests unitaires & bouchons API (mocking)
 │   ├── __init__.py
-│   └── test_api.py           # 24 tests unitaires déterministes et isolés
+│   └── test_api.py           # 27 tests unitaires déterministes et isolés
 ├── index.html                # Interface PWA complète & intégration lecteur alphaTab
 ├── sw.js                     # Service Worker pour l'installation PWA
 ├── manifest.json             # Manifeste d'application PWA (icônes, thème, nom)

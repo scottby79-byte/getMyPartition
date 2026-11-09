@@ -126,15 +126,19 @@ class TestSearchAPI(BaseTestCase):
         data = response.get_json()
         self.assertFalse(data.get("success"))
 
+    @patch("sources.gprotab.search_songs")
     @patch("sources.songsterr.search_songs")
     @patch("sources.myguitarpro.search_songs")
-    def test_search_nominal(self, mock_mygppro_search, mock_songsterr_search):
-        """Recherche nominale avec bouchons sur les sources externes."""
+    def test_search_nominal(self, mock_mygppro_search, mock_songsterr_search, mock_gprotab_search):
+        """Recherche nominale avec bouchons sur toutes les sources externes."""
         mock_songsterr_search.return_value = [
             {"songId": 123, "artist": "Metallica", "title": "Enter Sandman"}
         ]
         mock_mygppro_search.return_value = [
             {"songId": "track_456.gp5", "artist": "Metallica", "title": "Master of Puppets"}
+        ]
+        mock_gprotab_search.return_value = [
+            {"songId": "/en/tabs/metallica/one", "artist": "Metallica", "title": "One"}
         ]
 
         response = self.client.get("/api/search?q=metallica")
@@ -142,7 +146,7 @@ class TestSearchAPI(BaseTestCase):
         data = response.get_json()
         self.assertTrue(data.get("success"))
         self.assertEqual(data.get("query"), "metallica")
-        self.assertEqual(len(data.get("groups")), 2)
+        self.assertEqual(len(data.get("groups")), 3)
 
         # Vérifier que les résultats de chaque source sont bien présents
         group_sources = {g["source_id"]: g["results"] for g in data["groups"]}
@@ -150,14 +154,20 @@ class TestSearchAPI(BaseTestCase):
         self.assertEqual(group_sources["songsterr"][0]["title"], "Enter Sandman")
         self.assertEqual(len(group_sources["mygppro"]), 1)
         self.assertEqual(group_sources["mygppro"][0]["title"], "Master of Puppets")
+        self.assertEqual(len(group_sources["gprotab"]), 1)
+        self.assertEqual(group_sources["gprotab"][0]["title"], "One")
 
+    @patch("sources.gprotab.search_songs")
     @patch("sources.songsterr.search_songs")
     @patch("sources.myguitarpro.search_songs")
-    def test_search_partial_failure_resilience(self, mock_mygppro_search, mock_songsterr_search):
-        """Si une source lève une erreur, l'autre source continue et l'API ne plante pas."""
+    def test_search_partial_failure_resilience(self, mock_mygppro_search, mock_songsterr_search, mock_gprotab_search):
+        """Si une source lève une erreur, les autres sources continuent et l'API ne plante pas."""
         mock_songsterr_search.side_effect = RuntimeError("Songsterr API Down")
         mock_mygppro_search.return_value = [
             {"songId": "local_track.gp5", "artist": "Queen", "title": "Bohemian Rhapsody"}
+        ]
+        mock_gprotab_search.return_value = [
+            {"songId": "/en/tabs/queen/radio-ga-ga", "artist": "Queen", "title": "Radio Ga Ga"}
         ]
 
         response = self.client.get("/api/search?q=queen")
@@ -170,6 +180,8 @@ class TestSearchAPI(BaseTestCase):
         self.assertEqual(len(group_map["songsterr"]["results"]), 0)
         self.assertIsNone(group_map["mygppro"]["error"])
         self.assertEqual(len(group_map["mygppro"]["results"]), 1)
+        self.assertIsNone(group_map["gprotab"]["error"])
+        self.assertEqual(len(group_map["gprotab"]["results"]), 1)
 
 
 class TestSongAndCheckAPI(BaseTestCase):
@@ -221,6 +233,26 @@ class TestSongAndCheckAPI(BaseTestCase):
         self.assertEqual(response.status_code, 200)
         data = response.get_json()
         self.assertFalse(data.get("available"))
+
+    @patch("sources.gprotab.get_song_gp_source")
+    def test_song_details_gprotab_nominal(self, mock_get_source):
+        """Récupération réussie des détails d'un morceau GProTab bouchonné."""
+        mock_get_source.return_value = {
+            "song_id": "/en/tabs/nirvana/about-a-girl",
+            "artist": "Nirvana",
+            "title": "About a girl",
+            "source_url": "https://gprotab.net/en/tabs/nirvana/about-a-girl?download",
+            "ext": ".gp3",
+            "tracks": [{"index": 0, "name": "Guitare"}, {"index": 1, "name": "Basse"}]
+        }
+
+        response = self.client.get("/api/song?id=/en/tabs/nirvana/about-a-girl&source=gprotab")
+        self.assertEqual(response.status_code, 200)
+        data = response.get_json()
+        self.assertTrue(data.get("success"))
+        self.assertEqual(data["details"]["artist"], "Nirvana")
+        self.assertEqual(data["details"]["ext"], ".gp3")
+        self.assertEqual(len(data["details"]["tracks"]), 2)
 
 
 class TestDownloadAndSecurityAPI(BaseTestCase):
@@ -358,6 +390,49 @@ class TestDownloadAndSecurityAPI(BaseTestCase):
 
         response = self.client.get("/api/tab-file?source=songsterr&id=789")
         self.assertEqual(response.status_code, 403)
+
+    @patch("sources.gprotab.get_song_gp_source")
+    @patch("sources.gprotab.download_gp_file")
+    def test_download_gprotab_nominal(self, mock_download, mock_get_source):
+        """POST /api/download avec la source gprotab télécharge et sauvegarde la partition."""
+        mock_get_source.return_value = {
+            "artist": "Nirvana",
+            "title": "About a girl",
+            "source_url": "https://gprotab.net/en/tabs/nirvana/about-a-girl?download",
+            "ext": ".gp3",
+        }
+
+        def fake_download(url, path):
+            Path(path).write_bytes(b"GPROTAB_BIN_DATA")
+            return Path(path)
+        mock_download.side_effect = fake_download
+
+        response = self.client.post("/api/download", json={"id": "/en/tabs/nirvana/about-a-girl", "source": "gprotab"})
+        self.assertEqual(response.status_code, 200)
+        data = response.get_json()
+        self.assertTrue(data.get("success"))
+        self.assertIn("Nirvana_About_a_girl.gp3", data.get("filename"))
+
+    @patch("sources.gprotab.get_song_gp_source")
+    @patch("urllib.request.urlopen")
+    def test_tab_file_gprotab_nominal(self, mock_urlopen, mock_get_source):
+        """GET /api/tab-file pour gprotab sert le binaire téléchargé depuis gprotab.net."""
+        mock_get_source.return_value = {
+            "artist": "Nirvana",
+            "title": "About a girl",
+            "source_url": "https://gprotab.net/en/tabs/nirvana/about-a-girl?download",
+            "ext": ".gp3",
+        }
+
+        mock_response = MagicMock()
+        mock_response.read.return_value = b"GPROTAB_BIN_STREAM"
+        mock_response.__enter__.return_value = mock_response
+        mock_urlopen.return_value = mock_response
+
+        response = self.client.get("/api/tab-file?source=gprotab&id=/en/tabs/nirvana/about-a-girl")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data, b"GPROTAB_BIN_STREAM")
+        self.assertEqual(response.headers.get("Content-Type"), "application/octet-stream")
 
 
 if __name__ == "__main__":

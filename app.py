@@ -33,7 +33,7 @@ from pymongo import MongoClient
 from supabase import create_client
 from dotenv import load_dotenv
 
-from sources import songsterr, myguitarpro
+from sources import songsterr, myguitarpro, gprotab
 
 # ---------------------------------------------------------------------------
 # Domaines autorisés pour les téléchargements de partitions (SSRF allowlist)
@@ -41,6 +41,8 @@ from sources import songsterr, myguitarpro
 _ALLOWED_GP_HOSTS = {
     "www.songsterr.com",
     "songsterr.com",
+    "gprotab.net",
+    "www.gprotab.net",
 }
 
 
@@ -106,7 +108,7 @@ myguitarpro.init(
 SOURCES: list = [
     songsterr,   # 1. Songsterr (source externe)
     myguitarpro, # 2. Bibliothèque personnelle (MongoDB + Supabase)
-    # gprotab,   # 3. GProTab — à décommenter quand le module sera prêt
+    gprotab,     # 3. GProTab (catalogue communautaire)
 ]
 
 
@@ -213,6 +215,9 @@ def _validate_ssrf_url(url: str) -> bool:
             return False
         # Autoriser songsterr.com et tous ses sous-domaines (*.songsterr.com, gp.songsterr.com...)
         if host == "songsterr.com" or host.endswith(".songsterr.com"):
+            return True
+        # Autoriser gprotab.net et tous ses sous-domaines (*.gprotab.net)
+        if host == "gprotab.net" or host.endswith(".gprotab.net"):
             return True
         # Autoriser Supabase Storage (bibliothèque personnelle)
         if host.endswith(".supabase.co"):
@@ -457,14 +462,14 @@ def api_download():
 
         # Détection de l'extension
         url_path = urllib.parse.urlparse(source_url).path
-        ext      = Path(url_path).suffix.lower()
+        ext      = details.get("ext") or Path(url_path).suffix.lower()
         if not ext:
             for candidate in [".gp5", ".gp4", ".gp3", ".gpx", ".gp"]:
                 if candidate in source_url.lower():
                     ext = candidate
                     break
             else:
-                # Fallback sur le storage_path MongoDB si disponible
+                # Fallback sur le storage_path MongoDB ou identifiant
                 ext = Path(song_id).suffix.lower() or ".gp"
 
         artist_clean = source.clean_filename(details.get('artist', ''))
@@ -582,14 +587,14 @@ def api_tab_file():
             source_url = details["source_url"]
 
             url_path = urllib.parse.urlparse(source_url).path
-            ext = Path(url_path).suffix.lower()
+            ext = details.get("ext") or Path(url_path).suffix.lower()
             if not ext:
                 for candidate in [".gp5", ".gp4", ".gp3", ".gpx", ".gp"]:
                     if candidate in source_url.lower():
                         ext = candidate
                         break
                 else:
-                    ext = ".gp"
+                    ext = Path(song_id).suffix.lower() or ".gp"
 
             artist_clean = source.clean_filename(details.get('artist', ''))
             title_clean  = source.clean_filename(details.get('title', ''))
@@ -599,9 +604,13 @@ def api_tab_file():
                 base_name = artist_clean or title_clean or "partition"
             filename = f"{base_name}{ext}"
 
+            req_headers = {"User-Agent": getattr(source, "USER_AGENT", "GetMyPartition/1.0")}
+            if hasattr(source, "REFERER") and source.REFERER:
+                req_headers["Referer"] = source.REFERER
+
             req = urllib.request.Request(
                 source_url,
-                headers={"User-Agent": getattr(source, "USER_AGENT", "GetMyPartition/1.0")}
+                headers=req_headers
             )
             if not _validate_ssrf_url(source_url):
                 return jsonify({"success": False, "error": "URL source non autorisée"}), 403

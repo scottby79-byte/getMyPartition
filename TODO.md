@@ -2,7 +2,8 @@
 - player bloquer verrouillage ecran => OK
 - Purge des recherches (api -> cronjob)
 - Ne garder que les 20 derniers telechargements
-- Add search on GProTab (gprotab.net)   Un site communautaire gratuit et très épuré spécialisé dans le partage de partitions Guitar Pro.API officielle : Pas d'API REST formelle documentée. Accessibilité : La structure du site est très simple (URL prévisibles, formulaires légers). C'est l'un des sites les plus faciles à scraper de manière éthique pour rechercher des morceaux et télécharger les fichiers .gp5
+- Add search on GProTab (gprotab.net) => OK
+- Add source https://gtptabs.com/
 - repair suggestion => OK
 - keep_alive du conteneur avec https://cron-job.org/en/ => OK
 
