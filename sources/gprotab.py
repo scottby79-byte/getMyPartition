@@ -161,6 +161,10 @@ def search_songs(query: str) -> list[dict]:
                         "source": SOURCE_ID,
                         "tracks": []
                     })
+
+                if len(results) >= 15:
+                    break
+
         except Exception as e:
             pass
 
@@ -200,9 +204,9 @@ def search_songs(query: str) -> list[dict]:
                             "source": SOURCE_ID,
                             "tracks": []
                         })
-                    if len(results) >= 20:
+                    if len(results) >= 15:
                         break
-                if len(results) >= 20:
+                if len(results) >= 15:
                     break
         except Exception:
             pass
