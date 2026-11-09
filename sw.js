@@ -2,8 +2,8 @@ const CACHE_NAME = 'getmypartition-v2';
 const STATIC_ASSETS = [
   '/',
   '/manifest.json',
-  '/icon-192.png',
-  '/icon-512.png'
+  '/images/icon-192.png',
+  '/images/icon-512.png'
 ];
 
 // Installation : mise en cache du shell minimal PWA
@@ -45,7 +45,7 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 3. Pour le reste (fichiers statiques, alphaTab, etc.), on privilégie le réseau 
+  // 3. Pour le reste (fichiers statiques, alphaTab, etc.), on privilégie le réseau
   // SANS cache dynamique intrusif pour ne pas bloquer Safari sur iOS.
   event.respondWith(
     fetch(event.request).catch(() => {

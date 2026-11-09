@@ -1,6 +1,8 @@
 .git
 .gitignore
 __pycache__
+sources/__pycache__
+tools/__pycache__
 *.pyc
 *.pyo
 *.pyd
@@ -15,3 +17,12 @@ ENV
 *.mid
 *.midi
 .DS_Store
+# Outils d'administration locaux — non nécessaires en production
+tools/
+# Sources GIMP brutes — non nécessaires en production
+images/*.xcf
+# Tests unitaires — non nécessaires en production
+tests/
+
+exec-app.sh
+TODO.md
