@@ -162,13 +162,13 @@ def search_songs(query: str) -> list[dict]:
                         "tracks": []
                     })
 
-                if len(results) >= 15:
+                if len(results) > 14:
                     break
 
         except Exception as e:
             pass
 
-        if len(results) >= 15:
+        if len(results) > 14:
             break
 
     # 2. Si peu de résultats, recherche par nom d'artiste (type=artist)
@@ -204,9 +204,9 @@ def search_songs(query: str) -> list[dict]:
                             "source": SOURCE_ID,
                             "tracks": []
                         })
-                    if len(results) >= 15:
+                    if len(results) > 14:
                         break
-                if len(results) >= 15:
+                if len(results) >= 14:
                     break
         except Exception:
             pass
