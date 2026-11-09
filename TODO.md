@@ -1,4 +1,4 @@
-- Detecter les erreurs du player en amont pour ne pas afficher le bouton (songsterr) ?
+- Detecter les erreurs du player en amont pour ne pas afficher le bouton (songsterr) => OK
 - player bloquer verrouillage ecran => OK
 - Purge des recherches (api -> cronjob)
 - Ne garder que les 20 derniers telechargements

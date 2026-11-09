@@ -25,6 +25,7 @@ Conçue pour les musiciens et groupes en répétition ou sur scène, elle agrèg
   * Mode plein écran.
   * **Screen Wake Lock API** : Empêche automatiquement la mise en veille de l'écran sur smartphone ou tablette.
 * **Téléchargement direct** : Sauvegarde immédiate de la partition ouverte avec son vrai nom d'origine et son extension native exacte.
+* **Impression A4 / Export PDF** : Bouton d'impression et raccourci `Ctrl+P` isolant uniquement la partition et la piste active sur fond blanc, sans contrôles ni éléments d'interface.
 
 ### 💾 Gestion locale des téléchargements
 * Consultation des fichiers téléchargés dans le dossier local `download/`.
