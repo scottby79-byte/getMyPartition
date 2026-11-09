@@ -1,11 +1,11 @@
 - Detecter les erreurs du player en amont pour ne pas afficher le bouton (songsterr) => OK
 - player bloquer verrouillage ecran => OK
-- Purge des recherches (api -> cronjob)
-- Ne garder que les 20 derniers telechargements
 - Add search on GProTab (gprotab.net) => OK
-- Add source https://gtptabs.com/
 - repair suggestion => OK
 - keep_alive du conteneur avec https://cron-job.org/en/ => OK
+- Purge des recherches (api -> cronjob)
+- Add source https://gtptabs.com/
+- Ne garder que les 20 derniers telechargements
 
 Pour configurer et injecter vos variables de manière sécurisée de GitHub vers Render (via Docker), la méthode standard consiste à stocker les secrets dans les GitHub Actions Secrets, puis à les passer au conteneur lors du déploiement ou directement dans la configuration de l'hébergeur.Voici la démarche complète et sécurisée : => OK
 
