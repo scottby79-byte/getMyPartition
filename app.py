@@ -485,7 +485,14 @@ def api_download():
         if not _validate_ssrf_url(source_url):
             return jsonify({"success": False, "error": "URL source non autorisée"}), 403
 
-        source.download_gp_file(source_url, target_path)
+        if hasattr(source, "get_file_bytes") and details.get("reconstruct"):
+            content, gen_filename = source.get_file_bytes(parsed_id)
+            if gen_filename:
+                filename = gen_filename
+                target_path = PARTITIONS_DIR / filename
+            target_path.write_bytes(content)
+        else:
+            source.download_gp_file(source_url, target_path)
 
         if request.args.get("direct") == "1":
             return send_file(
@@ -582,40 +589,46 @@ def api_tab_file():
         if source_id == myguitarpro.SOURCE_ID:
             content, filename = myguitarpro.get_file_bytes(parsed_id)
         else:
-            # Source externe (ex: Songsterr)
+            # Source externe (ex: Songsterr, GProTab)
             details = source.get_song_gp_source(parsed_id)
             source_url = details["source_url"]
 
-            url_path = urllib.parse.urlparse(source_url).path
-            ext = details.get("ext") or Path(url_path).suffix.lower()
-            if not ext:
-                for candidate in [".gp5", ".gp4", ".gp3", ".gpx", ".gp"]:
-                    if candidate in source_url.lower():
-                        ext = candidate
-                        break
-                else:
-                    ext = Path(song_id).suffix.lower() or ".gp"
-
-            artist_clean = source.clean_filename(details.get('artist', ''))
-            title_clean  = source.clean_filename(details.get('title', ''))
-            if artist_clean and title_clean:
-                base_name = f"{artist_clean}_{title_clean}"
+            # Si la source prend en charge la reconstruction directe en mémoire
+            if hasattr(source, "get_file_bytes") and details.get("reconstruct"):
+                content, gen_filename = source.get_file_bytes(parsed_id)
+                if gen_filename:
+                    filename = gen_filename
             else:
-                base_name = artist_clean or title_clean or "partition"
-            filename = f"{base_name}{ext}"
+                url_path = urllib.parse.urlparse(source_url).path
+                ext = details.get("ext") or Path(url_path).suffix.lower()
+                if not ext:
+                    for candidate in [".gp5", ".gp4", ".gp3", ".gpx", ".gp"]:
+                        if candidate in source_url.lower():
+                            ext = candidate
+                            break
+                    else:
+                        ext = Path(song_id).suffix.lower() or ".gp"
 
-            req_headers = {"User-Agent": getattr(source, "USER_AGENT", "GetMyPartition/1.0")}
-            if hasattr(source, "REFERER") and source.REFERER:
-                req_headers["Referer"] = source.REFERER
+                artist_clean = source.clean_filename(details.get('artist', ''))
+                title_clean  = source.clean_filename(details.get('title', ''))
+                if artist_clean and title_clean:
+                    base_name = f"{artist_clean}_{title_clean}"
+                else:
+                    base_name = artist_clean or title_clean or "partition"
+                filename = f"{base_name}{ext}"
 
-            req = urllib.request.Request(
-                source_url,
-                headers=req_headers
-            )
-            if not _validate_ssrf_url(source_url):
-                return jsonify({"success": False, "error": "URL source non autorisée"}), 403
-            with urllib.request.urlopen(req, timeout=20) as resp:
-                content = resp.read()
+                req_headers = {"User-Agent": getattr(source, "USER_AGENT", "GetMyPartition/1.0")}
+                if hasattr(source, "REFERER") and source.REFERER:
+                    req_headers["Referer"] = source.REFERER
+
+                req = urllib.request.Request(
+                    source_url,
+                    headers=req_headers
+                )
+                if not _validate_ssrf_url(source_url):
+                    return jsonify({"success": False, "error": "URL source non autorisée"}), 403
+                with urllib.request.urlopen(req, timeout=20) as resp:
+                    content = resp.read()
 
         return send_file(
             io.BytesIO(content),

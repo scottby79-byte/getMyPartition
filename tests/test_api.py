@@ -391,6 +391,47 @@ class TestDownloadAndSecurityAPI(BaseTestCase):
         response = self.client.get("/api/tab-file?source=songsterr&id=789")
         self.assertEqual(response.status_code, 403)
 
+    @patch("sources.songsterr.get_song_gp_source")
+    @patch("sources.songsterr.get_file_bytes")
+    def test_tab_file_songsterr_reconstructed(self, mock_get_bytes, mock_get_source):
+        """GET /api/tab-file sert le binaire reconstruit depuis songsterr."""
+        mock_get_source.return_value = {
+            "artist": "Queen",
+            "title": "Bohemian Rhapsody",
+            "source_url": "https://www.songsterr.com/api/meta/270",
+            "ext": ".gp5",
+            "reconstruct": True,
+        }
+        mock_get_bytes.return_value = (b"RECONSTRUCTED_GP5_BYTES", "Queen_Bohemian_Rhapsody.gp5")
+
+        response = self.client.get("/api/tab-file?source=songsterr&id=270")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data, b"RECONSTRUCTED_GP5_BYTES")
+        self.assertEqual(response.headers.get("Content-Type"), "application/octet-stream")
+
+    @patch("sources.songsterr.get_song_gp_source")
+    @patch("sources.songsterr.get_file_bytes")
+    def test_download_songsterr_reconstructed(self, mock_get_bytes, mock_get_source):
+        """POST /api/download sauvegarde le binaire reconstruit depuis songsterr."""
+        mock_get_source.return_value = {
+            "artist": "Queen",
+            "title": "Bohemian Rhapsody",
+            "source_url": "https://www.songsterr.com/api/meta/270",
+            "ext": ".gp5",
+            "reconstruct": True,
+        }
+        mock_get_bytes.return_value = (b"RECONSTRUCTED_GP5_BYTES", "Queen_Bohemian_Rhapsody.gp5")
+
+        response = self.client.post("/api/download", json={"id": 270, "source": "songsterr"})
+        self.assertEqual(response.status_code, 200)
+        data = response.get_json()
+        self.assertTrue(data.get("success"))
+        self.assertIn("Queen_Bohemian_Rhapsody.gp5", data.get("filename"))
+        # Nettoyage
+        target = Path(data.get("path"))
+        if target.exists():
+            target.unlink()
+
     @patch("sources.gprotab.get_song_gp_source")
     @patch("sources.gprotab.download_gp_file")
     def test_download_gprotab_nominal(self, mock_download, mock_get_source):

@@ -19,6 +19,7 @@ import urllib.request
 import urllib.parse
 import threading
 import tempfile
+import guitarpro
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -68,7 +69,6 @@ def _extract_tracks_from_bytes(data: bytes, ext: str) -> list[dict]:
 
     tmp_path = None
     try:
-        import guitarpro
         with tempfile.NamedTemporaryFile(suffix=ext or ".gp", delete=False) as tmp:
             tmp.write(data)
             tmp_path = tmp.name
@@ -171,8 +171,8 @@ def search_songs(query: str) -> list[dict]:
         if len(results) > 14:
             break
 
-    # 2. Si peu de résultats, recherche par nom d'artiste (type=artist)
-    if len(results) < 6:
+    # 2. Si aucun résultat par morceau, recherche de secours par nom d'artiste (type=artist)
+    if not results:
         artist_query = sub_artist or clean_q
         url_artist = f"{BASE_URL}/en/search?type=artist&q={urllib.parse.quote(artist_query)}"
         try:
@@ -210,7 +210,6 @@ def search_songs(query: str) -> list[dict]:
                     break
         except Exception:
             pass
-
     return results
 
 
