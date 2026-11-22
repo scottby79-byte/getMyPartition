@@ -1,30 +1,49 @@
 #!/usr/bin/env python3
 """
 Script d'extraction de partitions Guitar Pro (.gp / .gp5 / .gp4 / .gp3 / .gpx) via Songsterr.
-Utilisable en ligne de commande ou comme module pour le serveur web.
+Prend en charge la recherche instantanée et la reconstruction fidèle en binaire .gp5
+via les données de notes CDN et la bibliothèque PyGuitarPro.
 """
 
+import io
 import sys
 import json
+import gzip
 import re
 import threading
 import urllib.request
 import urllib.parse
 from pathlib import Path
-
 from concurrent.futures import ThreadPoolExecutor
+
+import guitarpro
+from sources import songsterr_convert
 
 USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64; rv:120.0) Gecko/20100101 Firefox/120.0"
 SONGSTERR_REFERER = "https://www.songsterr.com/"
 
-# Cache des détails de morceaux pour éviter les requêtes répétées et accélérer les clics aperçu/téléchargement
+# Caches mémoire pour maximiser la réactivité et éviter les requêtes répétées
 _CACHE_MAX_SIZE = 500
 _details_cache: dict[int, dict] = {}
 _details_cache_lock = threading.Lock()
 
+_gp5_bytes_cache: dict[int, tuple[bytes, str]] = {}
+_gp5_bytes_lock = threading.Lock()
+
+# Host buckets CDN CloudFront pour les données de notes Songsterr
+STAGE_HOST = "d3d3l6a6rcgkaf"
+NORMAL_HOSTS = ["dqsljvtekg760", "d34shlm8p2ums2", "d3cqchs6g3b5ew"]
+LEGACY_HOSTS = ["d3rrfvx08uyjp1", "dodkcbujl0ebx", "dj1usja78sinh"]
+
+# Identifiants de source — requis par l'interface commune (app.py)
+SOURCE_ID    = "songsterr"
+SOURCE_LABEL = "Songsterr"
+
+
 def _cache_get(song_id: int):
     with _details_cache_lock:
         return _details_cache.get(song_id)
+
 
 def _cache_set(song_id: int, details: dict):
     with _details_cache_lock:
@@ -33,10 +52,6 @@ def _cache_set(song_id: int, details: dict):
             for k in keys_to_remove:
                 _details_cache.pop(k, None)
         _details_cache[song_id] = details
-
-# Identifiants de source — requis par l'interface commune (app.py)
-SOURCE_ID    = "songsterr"
-SOURCE_LABEL = "Songsterr"
 
 
 def clean_filename(s: str) -> str:
@@ -65,25 +80,44 @@ def verify_source_url(url: str) -> bool:
         return False
 
 
-def _fetch_revision(rev_id: int):
-    """Récupère les informations JSON d'une révision spécifique."""
-    rev_url = f"https://www.songsterr.com/api/revision/{rev_id}"
-    req = urllib.request.Request(
-        rev_url,
-        headers={"User-Agent": USER_AGENT, "Referer": SONGSTERR_REFERER}
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=5) as r:
-            return rev_id, json.loads(r.read().decode("utf-8"))
-    except Exception:
-        return rev_id, None
+def _part_url(image: str, song_id: int, revision_id: int, part_id: int, attempt: int = 0) -> str:
+    """Construit l'URL CloudFront pour récupérer le JSON d'une piste instrumentale."""
+    if image and image.endswith("-stage"):
+        host = STAGE_HOST
+    elif image:
+        host = NORMAL_HOSTS[attempt % len(NORMAL_HOSTS)]
+    else:
+        host = LEGACY_HOSTS[attempt % len(LEGACY_HOSTS)]
+        return f"https://{host}.cloudfront.net/part/{revision_id}/{part_id}"
+    return f"https://{host}.cloudfront.net/{song_id}/{revision_id}/{image}/{part_id}.json"
+
+
+def _fetch_part(song_id: int, revision_id: int, image: str, part_id: int) -> dict | None:
+    """Télécharge et décompresse le JSON d'une piste, en testant plusieurs CDN en cas d'erreur."""
+    for attempt in range(3):
+        url = _part_url(image, song_id, revision_id, part_id, attempt)
+        try:
+            req = urllib.request.Request(
+                url,
+                headers={"User-Agent": USER_AGENT, "Accept": "*/*", "Accept-Encoding": "gzip"}
+            )
+            with urllib.request.urlopen(req, timeout=12) as resp:
+                data = resp.read()
+            if data[:2] == b"\x1f\x8b":
+                data = gzip.decompress(data)
+            return json.loads(data.decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            if e.code not in (403, 404, 500, 502, 503):
+                raise
+        except Exception:
+            pass
+    return None
 
 
 def search_songs(query: str) -> list:
     """
-    Recherche des morceaux sur Songsterr par mot-clé (artiste et/ou titre)
-    et filtre automatiquement pour ne renvoyer que les morceaux disposant
-    d'une véritable partition Guitar Pro (.gp/.gp5/.gp4/.gp3/.gpx).
+    Recherche instantanée des morceaux sur Songsterr par mot-clé (artiste et/ou titre).
+    Filtre les morceaux disposant d'un lecteur et de pistes actives.
     """
     encoded_query = urllib.parse.quote(query.strip())
     url = f"https://www.songsterr.com/api/songs?pattern={encoded_query}"
@@ -102,168 +136,133 @@ def search_songs(query: str) -> list:
     if not isinstance(data, list):
         return []
 
-    # Étape 1 : Pré-filtrage rapide des morceaux manifestement sans tablature
-    candidates = [
-        song for song in data
-        if song.get("hasPlayer") and song.get("tracks")
-    ]
-
-    # Étape 2 : Vérification parallèle de l'existence d'une source Guitar Pro
-    def _validate_candidate(song):
-        sid = song.get("songId")
-        if not sid:
-            return None
-        try:
-            details = get_song_gp_source(sid)
-            if details and details.get("source_url"):
-                return song
-        except Exception:
-            return None
-        return None
-
-    valid_songs = []
-    with ThreadPoolExecutor(max_workers=min(10, len(candidates) or 1)) as pool:
-        for res in pool.map(_validate_candidate, candidates):
-            if res is not None:
-                valid_songs.append(res)
-
-    return valid_songs
+    results = []
+    for song in data:
+        if song.get("hasPlayer") and song.get("tracks"):
+            results.append({
+                "songId": song.get("songId"),
+                "artist": song.get("artist"),
+                "title": song.get("title"),
+                "source": SOURCE_ID,
+                "tracks": song.get("tracks", []),
+            })
+    return results
 
 
-def get_song_gp_source(song_id: int) -> dict:
+def get_song_gp_source(song_id: int | str) -> dict:
     """
-    Récupère l'URL source directe du fichier Guitar Pro (.gp5 ou .gp)
-    à partir du songId Songsterr.
-    Si la dernière révision ne possède pas de source (tablature modifiée sur l'éditeur web),
-    parcourt automatiquement l'historique des révisions pour trouver la version
-    Guitar Pro valide la plus récente.
+    Récupère les métadonnées Songsterr et prépare la résolution du fichier .gp5.
     """
-    cached = _cache_get(song_id)
+    try:
+        numeric_id = int(song_id)
+    except (ValueError, TypeError):
+        numeric_id = song_id
+
+    cached = _cache_get(numeric_id)
     if cached:
         return cached
 
-    # Étape 1 : Récupérer les métadonnées pour avoir le dernier revisionId
-    meta_url = f"https://www.songsterr.com/api/meta/{song_id}"
+    meta_url = f"https://www.songsterr.com/api/meta/{numeric_id}"
     req_meta = urllib.request.Request(
         meta_url,
         headers={"User-Agent": USER_AGENT, "Referer": SONGSTERR_REFERER}
     )
     with urllib.request.urlopen(req_meta, timeout=10) as response:
         meta_data = json.loads(response.read().decode("utf-8"))
-    
-    latest_revision_id = meta_data.get("revisionId")
-    if not latest_revision_id:
-        raise ValueError(f"Impossible de trouver le revisionId pour le morceau ID {song_id}")
-    
-    # Étape 2 : Vérifier la dernière révision
-    selected_rev_id, rev_data = _fetch_revision(latest_revision_id)
-    source_url = rev_data.get("source") if rev_data else None
-
-    if source_url and verify_source_url(source_url):
-        found = True
-    else:
-        source_url = None
-        found = False
-
-    # Étape 3 : Si aucune source valide, exploration intelligente de l'historique des révisions
-    if not found:
-        hist_url = f"https://www.songsterr.com/api/meta/{song_id}/revisions"
-        req_hist = urllib.request.Request(
-            hist_url,
-            headers={"User-Agent": USER_AGENT, "Referer": SONGSTERR_REFERER}
-        )
-        try:
-            with urllib.request.urlopen(req_hist, timeout=10) as resp_hist:
-                revisions = json.loads(resp_hist.read().decode("utf-8"))
-        except Exception:
-            revisions = []
-
-        # Construction des révisions candidates ordonnées par pertinence :
-        candidate_ids = []
-        
-        # 1. Imports explicites GP ('GP' ou gpImport)
-        for r in revisions:
-            if r.get("createdVia") == "GP" or r.get("gpImport"):
-                candidate_ids.append(r.get("revisionId"))
-        
-        # 2. Les 10 révisions les plus récentes
-        for r in revisions[:10]:
-            candidate_ids.append(r.get("revisionId"))
-            
-        # 3. Révisions historiques antérieures à l'éditeur web (createdVia is None)
-        for r in revisions:
-            if r.get("createdVia") is None:
-                candidate_ids.append(r.get("revisionId"))
-                
-        # 4. Upload initial (toute première révision)
-        if revisions:
-            candidate_ids.append(revisions[-1].get("revisionId"))
-
-        # Déduplication en préservant l'ordre de priorité
-        seen = {latest_revision_id, None}
-        ordered_candidates = []
-        for cid in candidate_ids:
-            if cid and cid not in seen:
-                seen.add(cid)
-                ordered_candidates.append(cid)
-
-        # Test des candidats en parallèle par petits lots
-        batch_size = 5
-        for i in range(0, min(len(ordered_candidates), 25), batch_size):
-            batch = ordered_candidates[i:i + batch_size]
-            with ThreadPoolExecutor(max_workers=batch_size) as executor:
-                results = list(executor.map(_fetch_revision, batch))
-            
-            res_dict = {rid: data for rid, data in results}
-            for rid in batch:
-                data = res_dict.get(rid)
-                if data and data.get("source"):
-                    candidate_url = data["source"]
-                    if verify_source_url(candidate_url):
-                        source_url = candidate_url
-                        selected_rev_id = rid
-                        rev_data = data
-                        found = True
-                        break
-            if found:
-                break
-
-    if not source_url:
-        song_title = meta_data.get("title", f"ID {song_id}")
-        raise ValueError(
-            f"Aucune source Guitar Pro (.gp/.gp5/.gp4/.gp3/.gpx) disponible pour « {song_title} ». "
-            "Cette tablature a probablement été saisie sur l'éditeur Songsterr sans fichier importé."
-        )
 
     res = {
-        "song_id": song_id,
-        "revision_id": selected_rev_id,
+        "song_id": numeric_id,
+        "revision_id": meta_data.get("revisionId"),
         "artist": meta_data.get("artist"),
         "title": meta_data.get("title"),
-        "source_url": source_url,
-        "tracks": rev_data.get("tracks", []) if rev_data else [],
+        "source_url": f"https://www.songsterr.com/api/meta/{numeric_id}",
+        "ext": ".gp5",
+        "tracks": meta_data.get("tracks", []),
+        "reconstruct": True,
     }
-    _cache_set(song_id, res)
+    _cache_set(numeric_id, res)
     return res
 
 
+def get_file_bytes(song_id: int | str) -> tuple[bytes, str]:
+    """
+    Génère ou récupère en cache le fichier Guitar Pro (.gp5) reconstruit depuis les pistes Songsterr.
+    Retourne (content_bytes, filename).
+    """
+    try:
+        numeric_id = int(song_id)
+    except (ValueError, TypeError):
+        numeric_id = song_id
+
+    with _gp5_bytes_lock:
+        if numeric_id in _gp5_bytes_cache:
+            return _gp5_bytes_cache[numeric_id]
+
+    meta_url = f"https://www.songsterr.com/api/meta/{numeric_id}"
+    req = urllib.request.Request(meta_url, headers={"User-Agent": USER_AGENT, "Referer": SONGSTERR_REFERER})
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        meta = json.loads(resp.read().decode("utf-8"))
+
+    revision_id = meta.get("revisionId")
+    image = meta.get("image")
+    tracks = meta.get("tracks", [])
+
+    def _fetch_idx(idx):
+        return _fetch_part(numeric_id, revision_id, image, idx)
+
+    # Téléchargement parallèle des JSON des différentes pistes
+    with ThreadPoolExecutor(max_workers=min(max(len(tracks), 1), 8)) as pool:
+        parts = list(pool.map(_fetch_idx, range(len(tracks))))
+
+    # Conversion en modèle Guitar Pro (.gp5)
+    song = songsterr_convert.build_song(meta, parts)
+
+    bio = io.BytesIO()
+    guitarpro.write(song, bio)
+    content = bio.getvalue()
+
+    artist_clean = clean_filename(meta.get("artist") or "Artist")
+    title_clean = clean_filename(meta.get("title") or "Title")
+    filename = f"{artist_clean}_{title_clean}.gp5"
+
+    with _gp5_bytes_lock:
+        if len(_gp5_bytes_cache) >= 100:
+            _gp5_bytes_cache.pop(next(iter(_gp5_bytes_cache)))
+        _gp5_bytes_cache[numeric_id] = (content, filename)
+
+    return content, filename
+
+
 def download_gp_file(source_url: str, output_path: Path) -> Path:
-    """Télécharge le fichier Guitar Pro depuis le serveur Songsterr."""
-    req = urllib.request.Request(
-        source_url,
-        headers={
-            "User-Agent": USER_AGENT,
-            "Referer": SONGSTERR_REFERER
-        }
-    )
-    with urllib.request.urlopen(req, timeout=15) as response:
-        content = response.read()
-    
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(output_path, "wb") as f:
-        f.write(content)
-    
-    return output_path
+    """Télécharge ou génère le fichier Guitar Pro vers output_path."""
+    # 1. Si l'URL pointe directement vers un binaire (.gp, .gp5...)
+    if str(source_url).endswith((".gp", ".gp5", ".gp4", ".gp3", ".gpx")):
+        try:
+            req = urllib.request.Request(
+                source_url,
+                headers={"User-Agent": USER_AGENT, "Referer": SONGSTERR_REFERER}
+            )
+            with urllib.request.urlopen(req, timeout=15) as response:
+                content = response.read()
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_bytes(content)
+            return output_path
+        except Exception:
+            pass
+
+    # 2. Sinon, extraction du songId et reconstruction .gp5
+    song_id = None
+    m = re.search(r'/(\d+)(?:[^\d]|$)', str(source_url))
+    if m:
+        song_id = int(m.group(1))
+
+    if song_id:
+        content, _ = get_file_bytes(song_id)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_bytes(content)
+        return output_path
+
+    raise ValueError(f"Impossible de télécharger la partition pour l'URL : {source_url}")
 
 
 def search_and_download(artist: str, title: str, output_dir: Path = Path(".")) -> dict:
@@ -278,16 +277,7 @@ def search_and_download(artist: str, title: str, output_dir: Path = Path(".")) -
     song_id = first["songId"]
     details = get_song_gp_source(song_id)
     
-    url_path = urllib.parse.urlparse(details["source_url"]).path
-    ext = Path(url_path).suffix.lower()
-    if not ext:
-        for candidate_ext in [".gp5", ".gp4", ".gp3", ".gpx", ".gp"]:
-            if candidate_ext in details["source_url"].lower():
-                ext = candidate_ext
-                break
-        else:
-            ext = ".gp"
-    filename = f"{clean_filename(details['artist'])}_{clean_filename(details['title'])}{ext}"
+    filename = f"{clean_filename(details['artist'])}_{clean_filename(details['title'])}.gp5"
     target_path = output_dir / filename
     
     download_gp_file(details["source_url"], target_path)
@@ -311,7 +301,6 @@ if __name__ == "__main__":
         print(f"✅ Partition téléchargée avec succès !")
         print(f"   Artiste : {res['artist']}")
         print(f"   Titre   : {res['title']}")
-        print(f"   Source  : {res['source_url']}")
         print(f"   Fichier : {res['saved_path']}")
     except Exception as e:
         print(f"❌ Erreur : {e}")
